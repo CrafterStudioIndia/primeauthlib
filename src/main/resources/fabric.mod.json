@@ -3,11 +3,14 @@
 	"id": "primeauthlib",
 	"version": "${version}",
 	"name": "PrimeAuthLib",
-	"description": "Fabric authentication and utility library for Minecraft 1.21.11.",
+	"description": "Zero-config offline & online custom skin loader with in-game 3D preview, model auto-detection (Slim/Wide), and built-in Authlib Injector.",
 	"authors": [
 		"Crafter"
 	],
-	"contact": {},
+	"contact": {
+		"sources": "https://github.com/craftervictus/primeauthlib",
+		"issues": "https://github.com/craftervictus/primeauthlib/issues"
+	},
 	"license": "MIT",
 	"icon": "assets/primeauthlib/icon.png",
 	"environment": "*",
@@ -34,6 +37,8 @@
 		"minecraft": "~1.21.11",
 		"java": ">=21",
 		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*"
 	}
 }
-
