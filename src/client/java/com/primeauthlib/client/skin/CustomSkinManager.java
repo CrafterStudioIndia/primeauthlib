@@ -141,17 +141,20 @@ public class CustomSkinManager {
 				} catch (IllegalArgumentException ignored) {
 					currentModelMode = ModelMode.AUTO;
 				}
+				String authlibUrl = props.getProperty("authlib_server_url", "");
+				com.primeauthlib.client.authlib.AuthlibInjector.setAuthlibServerUrl(authlibUrl);
 			} catch (IOException e) {
 				LOGGER.warn("Failed to load config.properties", e);
 			}
 		}
 	}
 
-	private static void saveConfig() {
+	public static void saveConfig() {
 		Path configFile = getSkinsDir().resolve("config.properties");
 		try (FileOutputStream os = new FileOutputStream(configFile.toFile())) {
 			Properties props = new Properties();
 			props.setProperty("model_mode", currentModelMode.name());
+			props.setProperty("authlib_server_url", com.primeauthlib.client.authlib.AuthlibInjector.getAuthlibServerUrl());
 			props.store(os, "PrimeAuthLib Configuration");
 		} catch (IOException e) {
 			LOGGER.warn("Failed to save config.properties", e);
@@ -319,8 +322,30 @@ public class CustomSkinManager {
 		return findSkinFileForProfile(profile);
 	}
 
+	public static PlayerModelType getModelForSkinFile(Path skinFile) {
+		PlayerModelType forced = switch (currentModelMode) {
+			case SLIM -> PlayerModelType.SLIM;
+			case WIDE -> PlayerModelType.WIDE;
+			case AUTO -> null;
+		};
+		if (forced != null) {
+			return forced;
+		}
+
+		if (skinFile != null && Files.exists(skinFile)) {
+			try (InputStream is = Files.newInputStream(skinFile)) {
+				NativeImage img = NativeImage.read(is);
+				PlayerModelType detected = detectModel(img);
+				img.close();
+				return detected;
+			} catch (Exception ignored) {}
+		}
+
+		return PlayerModelType.WIDE;
+	}
+
 	@Nullable
-	private static Path findSkinFileForProfile(GameProfile profile) {
+	public static Path findSkinFileForProfile(GameProfile profile) {
 		Path dir = getSkinsDir();
 		if (!Files.isDirectory(dir)) {
 			return null;

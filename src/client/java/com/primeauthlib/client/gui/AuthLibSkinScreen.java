@@ -1,21 +1,22 @@
 package com.primeauthlib.client.gui;
 
+import com.primeauthlib.client.authlib.AuthlibInjector;
 import com.primeauthlib.client.skin.CustomSkinManager;
-import net.minecraft.util.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.PlayerSkinWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.DefaultPlayerSkin;
-import net.minecraft.world.entity.player.PlayerSkin;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
+import net.minecraft.world.entity.player.PlayerSkin;
 
 import java.nio.file.Path;
 
 /**
  * Settings GUI for PrimeAuthLib / auth-libskins.
  * Features an interactive 3D skin model preview, model mode toggling (Auto/Slim/Wide),
- * instant hot-reloading, and quick opening of the skins folder.
+ * instant hot-reloading, skins folder opener, and Authlib Injector configuration.
  */
 public class AuthLibSkinScreen extends Screen {
 	private final Screen lastScreen;
@@ -45,7 +46,7 @@ public class AuthLibSkinScreen extends Screen {
 					return DefaultPlayerSkin.getDefaultSkin();
 				}
 			);
-			this.skinPreviewWidget.setPosition(this.width / 2 - 42, 36);
+			this.skinPreviewWidget.setPosition(this.width / 2 - 42, 34);
 			this.addRenderableWidget(this.skinPreviewWidget);
 		}
 
@@ -59,9 +60,19 @@ public class AuthLibSkinScreen extends Screen {
 			CustomSkinManager.setModelMode(nextMode);
 			button.setMessage(getModelButtonText());
 		})
-		.bounds(this.width / 2 - 100, this.height - 82, 200, 20)
+		.bounds(this.width / 2 - 155, this.height - 82, 150, 20)
 		.build();
 		this.addRenderableWidget(this.modelModeButton);
+
+		// Authlib Injector Server Settings Button
+		Button authlibServerButton = Button.builder(Component.literal("Authlib Server..."), button -> {
+			if (this.minecraft != null) {
+				this.minecraft.setScreen(new AuthlibServerScreen(this));
+			}
+		})
+		.bounds(this.width / 2 + 5, this.height - 82, 150, 20)
+		.build();
+		this.addRenderableWidget(authlibServerButton);
 
 		// Open Folder Button
 		Button openFolderButton = Button.builder(Component.literal("Open Skins Folder"), button -> {
@@ -97,18 +108,24 @@ public class AuthLibSkinScreen extends Screen {
 		super.render(graphics, mouseX, mouseY, delta);
 
 		// Screen Title
-		graphics.drawCenteredString(this.font, this.title, this.width / 2, 14, 0xFFFFFF);
+		graphics.drawCenteredString(this.font, this.title, this.width / 2, 12, 0xFFFFFF);
 
 		// Active skin file information
 		Path activeFile = CustomSkinManager.getActiveLocalSkinFile();
 		String fileStatus = activeFile != null
 			? "Active Skin: §a" + activeFile.getFileName()
 			: "Active Skin: §cNone (Place skin.png in folder)";
-		graphics.drawCenteredString(this.font, Component.literal(fileStatus), this.width / 2, 162, 0xCCCCCC);
+		graphics.drawCenteredString(this.font, Component.literal(fileStatus), this.width / 2, 158, 0xCCCCCC);
 
 		// Folder hint
 		String folderHint = "Folder: §7" + CustomSkinManager.SKINS_DIR_NAME;
-		graphics.drawCenteredString(this.font, Component.literal(folderHint), this.width / 2, 174, 0x888888);
+		graphics.drawCenteredString(this.font, Component.literal(folderHint), this.width / 2, 170, 0x888888);
+
+		// Authlib Injector status
+		String injectorStatus = AuthlibInjector.hasServerUrl()
+			? "Authlib Injector: §aActive §7(Remote: " + AuthlibInjector.getAuthlibServerUrl() + ")"
+			: "Authlib Injector: §aActive §7(In-Game Local Injection)";
+		graphics.drawCenteredString(this.font, Component.literal(injectorStatus), this.width / 2, 182, 0x55FF55);
 	}
 
 	@Override
@@ -118,4 +135,3 @@ public class AuthLibSkinScreen extends Screen {
 		}
 	}
 }
-

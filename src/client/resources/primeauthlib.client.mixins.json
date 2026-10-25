@@ -8,7 +8,10 @@
 		"AbstractClientPlayerMixin",
 		"DefaultPlayerSkinMixin",
 		"OptionsScreenMixin",
-		"OptionsSubScreenMixin"
+		"OptionsSubScreenMixin",
+		"TextureUrlCheckerMixin",
+		"YggdrasilMinecraftSessionServiceMixin",
+		"SkinTextureDownloaderMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
@@ -17,4 +20,3 @@
 		"requireAnnotations": true
 	}
 }
-
