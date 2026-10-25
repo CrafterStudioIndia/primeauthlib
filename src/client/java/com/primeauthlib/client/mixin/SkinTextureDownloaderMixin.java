@@ -17,7 +17,7 @@ import java.nio.file.Path;
  * Directly intercepts local 'file://' skin texture URLs, loading them straight from disk
  * without making HTTP connections or failing on protocol casts.
  */
-@Mixin(SkinTextureDownloader.class)
+@Mixin(value = SkinTextureDownloader.class, priority = 1500)
 public class SkinTextureDownloaderMixin {
 	@Inject(method = "downloadSkin", at = @At("HEAD"), cancellable = true)
 	private void primeauthlib$onDownloadSkin(Path cachePath, String url, CallbackInfoReturnable<NativeImage> cir) {

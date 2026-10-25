@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(AbstractClientPlayer.class)
+@Mixin(value = AbstractClientPlayer.class, priority = 1500)
 public abstract class AbstractClientPlayerMixin {
 	@Inject(method = "getSkin", at = @At("RETURN"), cancellable = true)
 	private void primeauthlib$overrideEntitySkin(CallbackInfoReturnable<PlayerSkin> cir) {

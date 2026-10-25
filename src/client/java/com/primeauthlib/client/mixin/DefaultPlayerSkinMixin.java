@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.UUID;
 
-@Mixin(DefaultPlayerSkin.class)
+@Mixin(value = DefaultPlayerSkin.class, priority = 1500)
 public class DefaultPlayerSkinMixin {
 	@Inject(method = "get(Ljava/util/UUID;)Lnet/minecraft/world/entity/player/PlayerSkin;", at = @At("RETURN"), cancellable = true)
 	private static void primeauthlib$onGetDefaultSkinByUuid(UUID uuid, CallbackInfoReturnable<PlayerSkin> cir) {

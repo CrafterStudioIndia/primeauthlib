@@ -17,6 +17,9 @@
 		],
 		"client": [
 			"com.primeauthlib.client.PrimeAuthLibClient"
+		],
+		"modmenu": [
+			"com.primeauthlib.client.compat.PrimeAuthLibModMenu"
 		]
 	},
 	"mixins": [

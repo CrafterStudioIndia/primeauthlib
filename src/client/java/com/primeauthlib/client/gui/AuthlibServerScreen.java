@@ -105,3 +105,4 @@ public class AuthlibServerScreen extends Screen {
 		}
 	}
 }
+

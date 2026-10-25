@@ -18,7 +18,7 @@ import java.util.UUID;
  * Intercepts session authentication and texture resolution directly in-game,
  * providing both local offline/online custom skin injection and remote Authlib-Injector support.
  */
-@Mixin(targets = "com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService", remap = false)
+@Mixin(targets = "com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService", remap = false, priority = 1500)
 public class YggdrasilMinecraftSessionServiceMixin {
 
 	@Inject(method = "getPackedTextures", at = @At("RETURN"), cancellable = true)

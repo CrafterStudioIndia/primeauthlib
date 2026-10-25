@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Allows custom texture domains, local file:// schemes, and custom Authlib-Injector
  * API servers without triggering 'Textures payload url is invalid' errors.
  */
-@Mixin(targets = "com.mojang.authlib.yggdrasil.TextureUrlChecker", remap = false)
+@Mixin(targets = "com.mojang.authlib.yggdrasil.TextureUrlChecker", remap = false, priority = 1500)
 public class TextureUrlCheckerMixin {
 	@Inject(method = "isAllowedTextureDomain", at = @At("HEAD"), cancellable = true)
 	private static void primeauthlib$onIsAllowedTextureDomain(String url, CallbackInfoReturnable<Boolean> cir) {

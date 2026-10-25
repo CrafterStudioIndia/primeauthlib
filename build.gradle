@@ -33,6 +33,9 @@ dependencies {
 
 	// Fabric API
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// ModMenu compile-only stub for ModMenuApi integration
+	compileOnly files("libs/modmenu-api-stub.jar")
 }
 
 processResources {
