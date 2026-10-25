@@ -1,0 +1,93 @@
+# ==========================================
+# Gradle & Build Artifacts
+# ==========================================
+.gradle/
+build/
+out/
+bin/
+classes/
+.gradle-cache/
+
+# Ignore all JAR/WAR/ZIP by default except Gradle wrapper & libs/
+*.jar
+*.war
+*.zip
+*.tar.gz
+*.7z
+!gradle/wrapper/gradle-wrapper.jar
+!libs/*.jar
+
+# ==========================================
+# Minecraft & Fabric Runtime Directory
+# ==========================================
+run/
+runClient/
+runServer/
+logs/
+crash-reports/
+*.log
+
+# ==========================================
+# IDE & Editor Configurations
+# ==========================================
+# JetBrains IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.settings/
+.classpath
+.project
+*.launch
+
+# Visual Studio Code
+.vscode/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+
+# ==========================================
+# Java Crash Logs & Profiling
+# ==========================================
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+
+# ==========================================
+# Operating System Files
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+*.swp
+*.swo
+.fuse_hidden*
+.directory
+.trash/
+
+# ==========================================
+# Local Secrets & Environment
+# ==========================================
+.env
+.env.local
+*.local
+local.properties

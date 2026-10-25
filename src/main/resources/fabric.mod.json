@@ -8,8 +8,8 @@
 		"Crafter"
 	],
 	"contact": {
-		"sources": "https://github.com/craftervictus/primeauthlib",
-		"issues": "https://github.com/craftervictus/primeauthlib/issues"
+		"sources": "https://github.com/crafterstudioindia/primeauthlib",
+		"issues": "https://github.com/crafterstudioindia/primeauthlib/issues"
 	},
 	"license": "MIT",
 	"icon": "assets/primeauthlib/icon.png",
