@@ -29,3 +29,4 @@ All notable changes to **PrimeAuthLib** will be documented in this file.
   - Smart collision avoidance in `OptionsScreen` that detects occupied button coordinates and shifts automatically.
   - Fabric `ScreenEvents` hooks for `SkinCustomizationScreen`.
   - High-priority Mixins (`priority = 1500`) to cleanly override third-party skin mods when custom skins are loaded.
+

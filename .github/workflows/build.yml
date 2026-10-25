@@ -33,3 +33,4 @@ jobs:
         with:
           name: primeauthlib-jars
           path: build/libs/*.jar
+
