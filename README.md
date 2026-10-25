@@ -64,10 +64,9 @@ Place your `.png` skin files into the `auth-libskins/` directory in your `.minec
 You can open the **"Auth-Lib Skin"** settings screen in any of the following ways:
 
 1. **Hotkey**: Press **`Left Shift + K`** anywhere in-game or in menus. (Can also be customized in **Options -> Controls -> Key Binds -> PrimeAuthLib**).
-2. **Chat Commands**: Run `/skin`, `/authlibskin`, or `/primeskin`.
-3. **Options Menu**: Click **"Auth-Lib Skin..."** at the bottom of the vanilla **Options** screen.
-4. **Skin Customization**: Click **"Auth-Lib Skin..."** inside **Options -> Skin Customization...**.
-5. **ModMenu**: Click the config button next to **PrimeAuthLib** in the ModMenu list.
+2. **Options Menu**: Click **"Auth-Lib Skin..."** at the bottom of the vanilla **Options** screen.
+3. **Skin Customization**: Click **"Auth-Lib Skin..."** inside **Options -> Skin Customization...**.
+4. **ModMenu**: Click the config button next to **PrimeAuthLib** in the ModMenu list.
 
 ---
 
