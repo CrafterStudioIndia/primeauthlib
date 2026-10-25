@@ -8,7 +8,7 @@
 		"AbstractClientPlayerMixin",
 		"DefaultPlayerSkinMixin",
 		"OptionsScreenMixin",
-		"SkinCustomizationScreenMixin"
+		"OptionsSubScreenMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
