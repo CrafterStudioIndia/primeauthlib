@@ -3,7 +3,9 @@
 	"package": "com.primeauthlib.client.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
-		"PrimeAuthLibClientMixin"
+		"PrimeAuthLibClientMixin",
+		"PlayerInfoMixin",
+		"AbstractClientPlayerMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
