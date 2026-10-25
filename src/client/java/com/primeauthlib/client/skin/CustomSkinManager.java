@@ -64,7 +64,8 @@ public class CustomSkinManager {
 	private record CachedSkin(
 		Path path,
 		long lastModified,
-		Identifier textureId,
+		Identifier assetId,
+		Identifier texturePath,
 		DynamicTexture texture,
 		PlayerModelType model
 	) {}
@@ -225,7 +226,8 @@ public class CustomSkinManager {
 				// Thread safety: texture operations must run on render thread
 				if (RenderSystem.isOnRenderThread()) {
 					if (cached != null && fileLastModified != cached.lastModified()) {
-						Minecraft.getInstance().getTextureManager().release(cached.textureId());
+						Minecraft.getInstance().getTextureManager().release(cached.texturePath());
+						Minecraft.getInstance().getTextureManager().release(cached.assetId());
 						cached.texture().close();
 					}
 					cached = loadAndRegisterSkin(skinFile, fileLastModified);
@@ -237,7 +239,8 @@ public class CustomSkinManager {
 					final CachedSkin oldCached = cached;
 					Minecraft.getInstance().execute(() -> {
 						if (oldCached != null && fileLastModified != oldCached.lastModified()) {
-							Minecraft.getInstance().getTextureManager().release(oldCached.textureId());
+							Minecraft.getInstance().getTextureManager().release(oldCached.texturePath());
+							Minecraft.getInstance().getTextureManager().release(oldCached.assetId());
 							oldCached.texture().close();
 						}
 						CachedSkin newCached = loadAndRegisterSkin(skinFile, fileLastModified);
@@ -266,7 +269,7 @@ public class CustomSkinManager {
 		};
 
 		return new PlayerSkin(
-			new ClientAsset.ResourceTexture(cached.textureId()),
+			new ClientAsset.ResourceTexture(cached.assetId(), cached.texturePath()),
 			originalSkin != null ? originalSkin.cape() : null,
 			originalSkin != null ? originalSkin.elytra() : null,
 			modelToUse,
@@ -505,16 +508,30 @@ public class CustomSkinManager {
 			DynamicTexture dynamicTexture = new DynamicTexture(() -> "primeauthlib_skin", processed);
 			dynamicTexture.upload();
 
-			String sanitizedName = skinFile.getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "_").toLowerCase(Locale.ROOT);
-			Identifier textureId = Identifier.fromNamespaceAndPath(
+			// Strip .png extension if present before sanitizing to prevent duplicate extensions
+			String fileName = skinFile.getFileName().toString();
+			if (fileName.toLowerCase(Locale.ROOT).endsWith(".png")) {
+				fileName = fileName.substring(0, fileName.length() - 4);
+			}
+			String sanitizedName = fileName.replaceAll("[^a-zA-Z0-9_-]", "_").toLowerCase(Locale.ROOT);
+
+			Identifier assetId = Identifier.fromNamespaceAndPath(
 				PrimeAuthLib.MOD_ID,
 				"skins/" + sanitizedName + "_" + lastModified
 			);
 
-			Minecraft.getInstance().getTextureManager().register(textureId, dynamicTexture);
+			// Minecraft's renderer expects texturePath to match resource format: "textures/skins/...png"
+			Identifier texturePath = Identifier.fromNamespaceAndPath(
+				PrimeAuthLib.MOD_ID,
+				"textures/skins/" + sanitizedName + "_" + lastModified + ".png"
+			);
+
+			// Register both identifiers so any vanilla or mod lookup finds the active dynamic texture
+			Minecraft.getInstance().getTextureManager().register(texturePath, dynamicTexture);
+			Minecraft.getInstance().getTextureManager().register(assetId, dynamicTexture);
 
 			LOGGER.info("Loaded custom skin from {} (Detected Model: {})", skinFile.getFileName(), detectedModel);
-			return new CachedSkin(skinFile, lastModified, textureId, dynamicTexture, detectedModel);
+			return new CachedSkin(skinFile, lastModified, assetId, texturePath, dynamicTexture, detectedModel);
 		} catch (Exception e) {
 			LOGGER.error("Failed to read skin image from {}", skinFile, e);
 			return null;
@@ -635,7 +652,8 @@ public class CustomSkinManager {
 		}
 		client.execute(() -> {
 			for (CachedSkin cached : CACHED_SKINS.values()) {
-				client.getTextureManager().release(cached.textureId());
+				client.getTextureManager().release(cached.texturePath());
+				client.getTextureManager().release(cached.assetId());
 				cached.texture().close();
 			}
 			CACHED_SKINS.clear();
