@@ -9,11 +9,13 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.screens.options.OptionsScreen;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.options.SkinCustomizationScreen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
@@ -30,7 +32,7 @@ public class PrimeAuthLibClient implements ClientModInitializer {
 		LOGGER.info("Initializing PrimeAuthLib client components");
 		CustomSkinManager.init();
 
-		// 1. KeyBinding registration: Defaults to 'K' (configurable in Controls -> Key Binds)
+		// 1. KeyBinding registration: Defaults to 'K' requiring Left Shift modifier (Left Shift + K)
 		// Allows opening the skin GUI anytime, even if other MC clients or GUI overhaul mods replace menus
 		openSkinScreenKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			"key.primeauthlib.open_gui",
@@ -39,9 +41,12 @@ public class PrimeAuthLibClient implements ClientModInitializer {
 			KeyMapping.Category.MISC
 		));
 
+		// In-game tick listener: Requires Left Shift + K
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (openSkinScreenKey.consumeClick()) {
-				client.setScreen(new AuthLibSkinScreen(client.screen));
+				if (client.getWindow() != null && InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)) {
+					client.setScreen(new AuthLibSkinScreen(client.screen));
+				}
 			}
 		});
 
@@ -96,6 +101,7 @@ public class PrimeAuthLibClient implements ClientModInitializer {
 
 		// 3. ScreenEvents Integration (Safe fallback across other GUI mods and MC clients)
 		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+			// Add button to SkinCustomizationScreen if not present
 			if (screen instanceof SkinCustomizationScreen) {
 				boolean exists = Screens.getButtons(screen).stream()
 					.anyMatch(w -> w.getMessage().getString().contains("Auth-Lib Skin"));
@@ -109,6 +115,21 @@ public class PrimeAuthLibClient implements ClientModInitializer {
 					);
 				}
 			}
+
+			// Screen-level keyboard event: Left Shift + K works inside Pause Menu, Title Screen, etc.
+			// (Safely skips when typing in chat or inside text input boxes)
+			ScreenKeyboardEvents.beforeKeyPress(screen).register((s, keyEvent) -> {
+				if (!(s instanceof AuthLibSkinScreen) && !(s instanceof ChatScreen)) {
+					if (s.getFocused() instanceof EditBox) {
+						return;
+					}
+					if (keyEvent.key() == GLFW.GLFW_KEY_K && keyEvent.hasShiftDown()) {
+						if (client.getWindow() != null && InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)) {
+							client.setScreen(new AuthLibSkinScreen(s));
+						}
+					}
+				}
+			});
 		});
 	}
 }

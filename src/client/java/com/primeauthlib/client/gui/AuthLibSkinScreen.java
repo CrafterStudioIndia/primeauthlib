@@ -126,6 +126,9 @@ public class AuthLibSkinScreen extends Screen {
 			? "Authlib Injector: §aActive §7(Remote: " + AuthlibInjector.getAuthlibServerUrl() + ")"
 			: "Authlib Injector: §aActive §7(In-Game Local Injection)";
 		graphics.drawCenteredString(this.font, Component.literal(injectorStatus), this.width / 2, 182, 0x55FF55);
+
+		// Shortcut hint
+		graphics.drawCenteredString(this.font, Component.literal("Shortcut: §eLeft Shift + K §7(or /skin)"), this.width / 2, 194, 0x888888);
 	}
 
 	@Override

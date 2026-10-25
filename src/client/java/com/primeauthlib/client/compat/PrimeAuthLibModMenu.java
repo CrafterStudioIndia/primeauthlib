@@ -15,3 +15,4 @@ public class PrimeAuthLibModMenu implements ModMenuApi {
 		return AuthLibSkinScreen::new;
 	}
 }
+
