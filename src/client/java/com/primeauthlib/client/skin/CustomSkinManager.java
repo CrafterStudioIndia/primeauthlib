@@ -7,13 +7,14 @@ import com.primeauthlib.PrimeAuthLib;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.resources.PlayerSkin;
+import net.minecraft.core.ClientAsset;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.player.PlayerModelType;
+import net.minecraft.world.entity.player.PlayerSkin;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -65,7 +66,7 @@ public class CustomSkinManager {
 		long lastModified,
 		Identifier textureId,
 		DynamicTexture texture,
-		PlayerSkin.Model model
+		PlayerModelType model
 	) {}
 
 	public static void init() {
@@ -170,7 +171,7 @@ public class CustomSkinManager {
 	@Nullable
 	public static PlayerSkin getCustomSkin(@Nullable GameProfile profile, @Nullable PlayerSkin originalSkin) {
 		// Prevent redundant wrapping if already using our custom skin
-		if (originalSkin != null && originalSkin.texture() != null && originalSkin.texture().getNamespace().equals(PrimeAuthLib.MOD_ID)) {
+		if (originalSkin != null && originalSkin.body() != null && originalSkin.body().texturePath().getNamespace().equals(PrimeAuthLib.MOD_ID)) {
 			return originalSkin;
 		}
 
@@ -187,7 +188,7 @@ public class CustomSkinManager {
 	 */
 	@Nullable
 	public static PlayerSkin getCustomSkinByUuid(@Nullable UUID uuid, @Nullable PlayerSkin originalSkin) {
-		if (originalSkin != null && originalSkin.texture() != null && originalSkin.texture().getNamespace().equals(PrimeAuthLib.MOD_ID)) {
+		if (originalSkin != null && originalSkin.body() != null && originalSkin.body().texturePath().getNamespace().equals(PrimeAuthLib.MOD_ID)) {
 			return originalSkin;
 		}
 
@@ -258,17 +259,16 @@ public class CustomSkinManager {
 	}
 
 	private static PlayerSkin createPlayerSkin(CachedSkin cached, @Nullable PlayerSkin originalSkin) {
-		PlayerSkin.Model modelToUse = switch (currentModelMode) {
-			case SLIM -> PlayerSkin.Model.SLIM;
-			case WIDE -> PlayerSkin.Model.WIDE;
+		PlayerModelType modelToUse = switch (currentModelMode) {
+			case SLIM -> PlayerModelType.SLIM;
+			case WIDE -> PlayerModelType.WIDE;
 			case AUTO -> cached.model();
 		};
 
 		return new PlayerSkin(
-			cached.textureId(),
-			null,
-			originalSkin != null ? originalSkin.capeTexture() : null,
-			originalSkin != null ? originalSkin.elytraTexture() : null,
+			new ClientAsset.ResourceTexture(cached.textureId()),
+			originalSkin != null ? originalSkin.cape() : null,
+			originalSkin != null ? originalSkin.elytra() : null,
 			modelToUse,
 			true // secure: true to bypass any client security warnings
 		);
@@ -323,8 +323,8 @@ public class CustomSkinManager {
 			return null;
 		}
 
-		String name = profile.getName();
-		UUID id = profile.getId();
+		String name = profile.name();
+		UUID id = profile.id();
 		boolean isLocalUser = isLocalPlayer(name, id);
 
 		// 1. Check exact or case-insensitive username match: <username>.png
@@ -444,7 +444,7 @@ public class CustomSkinManager {
 			if (id != null && id.equals(client.player.getUUID())) {
 				return true;
 			}
-			if (name != null && client.player.getGameProfile() != null && name.equalsIgnoreCase(client.player.getGameProfile().getName())) {
+			if (name != null && client.player.getGameProfile() != null && name.equalsIgnoreCase(client.player.getGameProfile().name())) {
 				return true;
 			}
 		}
@@ -500,9 +500,9 @@ public class CustomSkinManager {
 			NativeImage original = NativeImage.read(is);
 			NativeImage processed = ensureStandardDimensions(original);
 
-			PlayerSkin.Model detectedModel = detectModel(processed);
+			PlayerModelType detectedModel = detectModel(processed);
 
-			DynamicTexture dynamicTexture = new DynamicTexture(processed);
+			DynamicTexture dynamicTexture = new DynamicTexture(() -> "primeauthlib_skin", processed);
 			dynamicTexture.upload();
 
 			String sanitizedName = skinFile.getFileName().toString().replaceAll("[^a-zA-Z0-9._-]", "_").toLowerCase(Locale.ROOT);
@@ -536,7 +536,7 @@ public class CustomSkinManager {
 			// Copy top 64x32 half directly
 			for (int x = 0; x < 64; x++) {
 				for (int y = 0; y < 32; y++) {
-					expanded.setPixelRGBA(x, y, image.getPixelRGBA(x, y));
+					expanded.setPixel(x, y, image.getPixel(x, y));
 				}
 			}
 
@@ -556,8 +556,8 @@ public class CustomSkinManager {
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
 				int readX = mirror ? (width - 1 - x) : x;
-				int pixel = src.getPixelRGBA(srcX + readX, srcY + y);
-				dst.setPixelRGBA(dstX + x, dstY + y, pixel);
+				int pixel = src.getPixel(srcX + readX, srcY + y);
+				dst.setPixel(dstX + x, dstY + y, pixel);
 			}
 		}
 	}
@@ -566,7 +566,7 @@ public class CustomSkinManager {
 	 * Automatically detects whether a skin is SLIM (Alex / 3-pixel arms)
 	 * or WIDE (Steve / 4-pixel arms) by checking transparency in the unused arm regions.
 	 */
-	public static PlayerSkin.Model detectModel(NativeImage image) {
+	public static PlayerModelType detectModel(NativeImage image) {
 		int width = image.getWidth();
 		int height = image.getHeight();
 
@@ -577,10 +577,10 @@ public class CustomSkinManager {
 					hasTransparency(image, 54 * scale, 20 * scale, 2 * scale, 12 * scale) ||
 					hasTransparency(image, 42 * scale, 48 * scale, 2 * scale, 4 * scale) ||
 					hasTransparency(image, 46 * scale, 52 * scale, 2 * scale, 12 * scale)) {
-					return PlayerSkin.Model.SLIM;
+					return PlayerModelType.SLIM;
 				}
 			}
-			return PlayerSkin.Model.WIDE;
+			return PlayerModelType.WIDE;
 		}
 
 		// Standard 64x64 check:
@@ -592,22 +592,22 @@ public class CustomSkinManager {
 			hasTransparency(image, 54, 20, 2, 12) ||
 			hasTransparency(image, 42, 48, 2, 4) ||
 			hasTransparency(image, 46, 52, 2, 12)) {
-			return PlayerSkin.Model.SLIM;
+			return PlayerModelType.SLIM;
 		}
 
 		// Check if unused arm regions are solid black/white filler from certain skin tools
 		if ((isSolidColor(image, 54, 20, 2, 12, 0xFF000000) && isSolidColor(image, 46, 52, 2, 12, 0xFF000000)) ||
 			(isSolidColor(image, 54, 20, 2, 12, 0xFFFFFFFF) && isSolidColor(image, 46, 52, 2, 12, 0xFFFFFFFF))) {
-			return PlayerSkin.Model.SLIM;
+			return PlayerModelType.SLIM;
 		}
 
-		return PlayerSkin.Model.WIDE;
+		return PlayerModelType.WIDE;
 	}
 
 	private static boolean hasTransparency(NativeImage image, int x0, int y0, int w, int h) {
 		for (int x = x0; x < x0 + w; x++) {
 			for (int y = y0; y < y0 + h; y++) {
-				int pixel = image.getPixelRGBA(x, y);
+				int pixel = image.getPixel(x, y);
 				int alpha = (pixel >> 24) & 0xFF;
 				if (alpha < 128) {
 					return true;
@@ -620,7 +620,7 @@ public class CustomSkinManager {
 	private static boolean isSolidColor(NativeImage image, int x0, int y0, int w, int h, int targetColor) {
 		for (int x = x0; x < x0 + w; x++) {
 			for (int y = y0; y < y0 + h; y++) {
-				if (image.getPixelRGBA(x, y) != targetColor) {
+				if (image.getPixel(x, y) != targetColor) {
 					return false;
 				}
 			}

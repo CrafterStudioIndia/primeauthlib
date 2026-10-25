@@ -3,7 +3,7 @@ package com.primeauthlib.client.mixin;
 import com.mojang.authlib.GameProfile;
 import com.primeauthlib.client.skin.CustomSkinManager;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.resources.PlayerSkin;
+import net.minecraft.world.entity.player.PlayerSkin;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -23,4 +23,3 @@ public abstract class AbstractClientPlayerMixin {
 		}
 	}
 }
-

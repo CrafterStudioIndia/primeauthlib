@@ -6,7 +6,6 @@
 		"PrimeAuthLibClientMixin",
 		"PlayerInfoMixin",
 		"AbstractClientPlayerMixin",
-		"SkinManagerMixin",
 		"DefaultPlayerSkinMixin",
 		"OptionsScreenMixin",
 		"SkinCustomizationScreenMixin"

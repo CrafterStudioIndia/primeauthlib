@@ -29,3 +29,4 @@ public abstract class SkinCustomizationScreenMixin extends Screen {
 		);
 	}
 }
+
