@@ -5,7 +5,9 @@
 	"client": [
 		"PrimeAuthLibClientMixin",
 		"PlayerInfoMixin",
-		"AbstractClientPlayerMixin"
+		"AbstractClientPlayerMixin",
+		"SkinManagerMixin",
+		"DefaultPlayerSkinMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

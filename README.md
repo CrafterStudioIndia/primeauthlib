@@ -13,17 +13,29 @@ Upon client startup, the mod automatically creates an `auth-libskins` folder ins
 ### Skin File Naming:
 | File Name | Description |
 | :--- | :--- |
-| `skin.png` | Applies to **YOUR** local player everywhere (singleplayer & all multiplayer servers). |
+| `skin.png` | Applies to **YOUR** local player everywhere (singleplayer, offline/cracked servers, online servers). |
 | `<username>.png` | Applies to a specific player name (e.g., `Crafter.png`, `Steve.png`). Case-insensitive. |
-| `<uuid>.png` | Applies to a specific player UUID (e.g., `069a79f4-44e9-4726-a5be-fca90e38aaf5.png`). |
+| `<uuid>.png` | Applies to a specific player UUID (online or offline UUID, with or without dashes). |
 | `default.png` | Fallback skin for any player who does not have an official or custom skin. |
 
-### Key Features:
-- **Automatic Slim / Wide Model Detection**: Inspects the 64x64 texture's unused arm coordinate regions (and handles HD square skins). If transparency is found in the 3-pixel arm gap, it sets the model to `SLIM` (Alex); otherwise `WIDE` (Steve).
-- **Legacy 64x32 Support**: Automatically expands legacy 64x32 skins to 64x64 format with proper arm and leg copying.
+> [!TIP]
+> **Zero-Config for Offline Accounts**: If you drop only a single `.png` skin file into `auth-libskins/`, the mod automatically binds it to your offline player!
+
+---
+
+## 🌟 Key Features
+
+- **Full Offline / Cracked Account Support**:
+  - Automatically calculates and matches deterministic offline UUIDs (`UUID.nameUUIDFromBytes("OfflinePlayer:" + username)`).
+  - Injects directly into `DefaultPlayerSkin`, `SkinManager`, `PlayerInfo`, and `AbstractClientPlayer`.
+  - Works 100% offline (no internet access or Mojang session connection required).
+- **Automatic Slim / Wide Model Detection**:
+  - Inspects the 64x64 texture's unused arm coordinate regions (also supports HD square skins like 128x128).
+  - If transparency is found in the 3-pixel arm gap, it assigns `PlayerSkin.Model.SLIM` (Alex); otherwise `PlayerSkin.Model.WIDE` (Steve).
+- **Legacy 64x32 Support**: Automatically expands legacy 64x32 skins to modern 64x64 format.
 - **Hot-Reloading**: Edit or replace a PNG file, and your skin updates in real time in-game without having to restart Minecraft!
-- **Bypasses Server Limitations**: Mixins directly into `PlayerInfo` and `AbstractClientPlayer`, ensuring custom skins take priority over vanilla Yggdrasil, offline mode, and other skin mods.
-- **Client Command**:
+- **Bypasses Server & API Limitations**: Custom skins take priority over vanilla Yggdrasil, offline mode, and other skin mods.
+- **Client Commands**:
   - `/authlibskins`: Prints the active skins folder path in chat.
   - `/authlibskins reload`: Forces an immediate reload and cache clear of all skins.
 

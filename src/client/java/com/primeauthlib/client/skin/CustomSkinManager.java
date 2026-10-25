@@ -14,17 +14,21 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
- * Manages loading, auto-detecting model, caching, and hot-reloading
- * skins placed in the instance's 'auth-libskins' directory.
+ * Manages loading, auto-detecting model (Slim vs Wide), caching, and hot-reloading
+ * player skins placed in the instance's 'auth-libskins' directory.
+ * Fully supports online accounts, offline (cracked) accounts, and offline servers.
  */
 public class CustomSkinManager {
 	private static final Logger LOGGER = LoggerFactory.getLogger("primeauthlib-skins");
@@ -56,18 +60,24 @@ public class CustomSkinManager {
 				String readmeContent = """
 					=== PrimeAuthLib - auth-libskins ===
 					
-					Place your custom skin PNG file here!
+					Place your custom skin PNG file(s) here!
+					Works seamlessly for BOTH online and offline (cracked) accounts and servers.
 					
 					Supported File Names:
-					1. skin.png          -> Applies to YOUR local player everywhere (singleplayer & any server).
-					2. <username>.png    -> Applies to a specific player username (e.g. Crafter.png, Steve.png).
-					3. <uuid>.png        -> Applies to a specific player UUID (e.g. 069a79f4-44e9-4726-a5be-fca90e38aaf5.png).
+					1. skin.png          -> Applies to YOUR local player everywhere (singleplayer, online & offline servers).
+					2. <username>.png    -> Applies to a specific player name (e.g. Crafter.png, Steve.png). Case-insensitive.
+					3. <uuid>.png        -> Applies to a specific player UUID (online or offline UUID, with or without dashes).
 					4. default.png       -> Fallback skin for players without a custom skin.
+					
+					Note for Offline Accounts:
+					- You can simply drop 'skin.png' or '<your_offline_nickname>.png' here!
+					- If you drop only a single .png skin in this folder, it automatically applies to your player!
+					- Offline UUIDs (nameUUIDFromBytes) are automatically calculated and matched.
 					
 					Features:
 					- Model Auto-Detection: Automatically detects Slim (Alex / 3-pixel arms) vs Wide (Steve / 4-pixel arms).
 					- Hot-Reloading: Replacing or saving the PNG file updates in-game immediately without restarting!
-					- Bypasses any server skin restrictions or offline-mode limitations.
+					- Completely bypasses server-side skin limits, offline mode limits, and third-party skin APIs.
 					""";
 				Files.writeString(readme, readmeContent);
 			}
@@ -83,6 +93,17 @@ public class CustomSkinManager {
 		return skinsDir;
 	}
 
+	/**
+	 * Computes the deterministic offline-mode UUID for a player nickname,
+	 * matching standard vanilla Minecraft offline server logic.
+	 */
+	public static UUID getOfflinePlayerUuid(String username) {
+		return UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(StandardCharsets.UTF_8));
+	}
+
+	/**
+	 * Retrieves or loads custom skin for a given GameProfile.
+	 */
 	@Nullable
 	public static PlayerSkin getCustomSkin(@Nullable GameProfile profile, @Nullable PlayerSkin originalSkin) {
 		if (profile == null) {
@@ -90,6 +111,24 @@ public class CustomSkinManager {
 		}
 
 		Path skinFile = findSkinFileForProfile(profile);
+		return applySkinFromFile(skinFile, originalSkin);
+	}
+
+	/**
+	 * Retrieves or loads custom skin by UUID (used by DefaultPlayerSkin fallbacks).
+	 */
+	@Nullable
+	public static PlayerSkin getCustomSkinByUuid(@Nullable UUID uuid, @Nullable PlayerSkin originalSkin) {
+		if (uuid == null) {
+			return originalSkin;
+		}
+
+		Path skinFile = findSkinFileForUuid(uuid);
+		return applySkinFromFile(skinFile, originalSkin);
+	}
+
+	@Nullable
+	private static PlayerSkin applySkinFromFile(@Nullable Path skinFile, @Nullable PlayerSkin originalSkin) {
 		if (skinFile == null || !Files.exists(skinFile)) {
 			return originalSkin;
 		}
@@ -106,7 +145,7 @@ public class CustomSkinManager {
 				LAST_CHECK_TIMES.put(cacheKey, now);
 
 				if (cached != null && fileLastModified != cached.lastModified()) {
-					// Release previous texture
+					// Release previous texture from GPU memory
 					final CachedSkin oldCached = cached;
 					Minecraft.getInstance().execute(() -> {
 						Minecraft.getInstance().getTextureManager().release(oldCached.textureId());
@@ -127,7 +166,7 @@ public class CustomSkinManager {
 					originalSkin != null ? originalSkin.capeTexture() : null,
 					originalSkin != null ? originalSkin.elytraTexture() : null,
 					cached.model(),
-					true
+					true // Set secure to true so client treats it as verified
 				);
 			}
 		} catch (Exception e) {
@@ -144,36 +183,44 @@ public class CustomSkinManager {
 			return null;
 		}
 
-		boolean isLocalUser = isLocalPlayer(profile);
+		String name = profile.getName();
+		UUID id = profile.getId();
+		boolean isLocalUser = isLocalPlayer(name, id);
 
 		// 1. Check exact or case-insensitive username match: <username>.png
-		if (profile.getName() != null && !profile.getName().isBlank()) {
-			Path byName = resolveFileCaseInsensitive(dir, profile.getName() + ".png");
+		if (name != null && !name.isBlank()) {
+			Path byName = resolveFileCaseInsensitive(dir, name + ".png");
 			if (byName != null) {
 				return byName;
 			}
+
+			// Also check offline UUID calculated from this username: <offline_uuid>.png
+			UUID offlineUuid = getOfflinePlayerUuid(name);
+			Path byOfflineUuid = resolveUuidFile(dir, offlineUuid);
+			if (byOfflineUuid != null) {
+				return byOfflineUuid;
+			}
 		}
 
-		// 2. Check UUID match: <uuid>.png or <uuid-without-dashes>.png
-		if (profile.getId() != null) {
-			String uuidStr = profile.getId().toString();
-			Path byUuid = resolveFileCaseInsensitive(dir, uuidStr + ".png");
+		// 2. Check profile UUID match: <uuid>.png
+		if (id != null) {
+			Path byUuid = resolveUuidFile(dir, id);
 			if (byUuid != null) {
 				return byUuid;
 			}
-
-			String compactUuid = uuidStr.replace("-", "");
-			Path byCompactUuid = resolveFileCaseInsensitive(dir, compactUuid + ".png");
-			if (byCompactUuid != null) {
-				return byCompactUuid;
-			}
 		}
 
-		// 3. If local user, check skin.png
+		// 3. If local user (works for both online & offline accounts)
 		if (isLocalUser) {
 			Path skinPng = resolveFileCaseInsensitive(dir, "skin.png");
 			if (skinPng != null) {
 				return skinPng;
+			}
+
+			// If the user dropped exactly ONE .png in auth-libskins, automatically apply it to local user
+			Path singlePng = findSingleSkinFile(dir);
+			if (singlePng != null) {
+				return singlePng;
 			}
 		}
 
@@ -186,26 +233,95 @@ public class CustomSkinManager {
 		return null;
 	}
 
-	private static boolean isLocalPlayer(GameProfile profile) {
+	@Nullable
+	private static Path findSkinFileForUuid(UUID uuid) {
+		Path dir = getSkinsDir();
+		if (!Files.isDirectory(dir)) {
+			return null;
+		}
+
+		// 1. Direct UUID match
+		Path byUuid = resolveUuidFile(dir, uuid);
+		if (byUuid != null) {
+			return byUuid;
+		}
+
+		// 2. Check if this UUID belongs to local player
+		if (isLocalPlayer(null, uuid)) {
+			Path skinPng = resolveFileCaseInsensitive(dir, "skin.png");
+			if (skinPng != null) {
+				return skinPng;
+			}
+
+			Path singlePng = findSingleSkinFile(dir);
+			if (singlePng != null) {
+				return singlePng;
+			}
+		}
+
+		// 3. Fallback to default.png
+		Path defaultPng = resolveFileCaseInsensitive(dir, "default.png");
+		if (defaultPng != null) {
+			return defaultPng;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Checks if the given profile/UUID represents the local player playing on this client.
+	 * Robustly accounts for offline launchers, offline mode servers, and UUID differences.
+	 */
+	private static boolean isLocalPlayer(@Nullable String name, @Nullable UUID id) {
 		Minecraft client = Minecraft.getInstance();
 		if (client == null) {
 			return false;
 		}
 
+		// Check User (present on all launchers, both online and offline)
 		if (client.getUser() != null) {
-			if (profile.getName() != null && profile.getName().equalsIgnoreCase(client.getUser().getName())) {
+			String localUsername = client.getUser().getName();
+			UUID localUserUuid = client.getUser().getProfileId();
+
+			// Match by username
+			if (name != null && localUsername != null && name.equalsIgnoreCase(localUsername)) {
 				return true;
 			}
-			if (profile.getId() != null && profile.getId().equals(client.getUser().getProfileId())) {
+
+			// Match by direct User UUID
+			if (id != null && localUserUuid != null && id.equals(localUserUuid)) {
+				return true;
+			}
+
+			// Match by offline-computed UUID of local username
+			if (id != null && localUsername != null && id.equals(getOfflinePlayerUuid(localUsername))) {
 				return true;
 			}
 		}
 
-		if (client.player != null && profile.getId() != null && profile.getId().equals(client.player.getUUID())) {
-			return true;
+		// Check active ClientPlayerEntity in world
+		if (client.player != null) {
+			if (id != null && id.equals(client.player.getUUID())) {
+				return true;
+			}
+			if (name != null && client.player.getGameProfile() != null && name.equalsIgnoreCase(client.player.getGameProfile().getName())) {
+				return true;
+			}
 		}
 
 		return false;
+	}
+
+	@Nullable
+	private static Path resolveUuidFile(Path dir, UUID uuid) {
+		String uuidStr = uuid.toString();
+		Path byUuid = resolveFileCaseInsensitive(dir, uuidStr + ".png");
+		if (byUuid != null) {
+			return byUuid;
+		}
+
+		String compactUuid = uuidStr.replace("-", "");
+		return resolveFileCaseInsensitive(dir, compactUuid + ".png");
 	}
 
 	@Nullable
@@ -223,6 +339,19 @@ public class CustomSkinManager {
 		} catch (IOException e) {
 			return null;
 		}
+	}
+
+	@Nullable
+	private static Path findSingleSkinFile(Path dir) {
+		try (Stream<Path> stream = Files.list(dir)) {
+			List<Path> pngFiles = stream
+				.filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png"))
+				.toList();
+			if (pngFiles.size() == 1) {
+				return pngFiles.get(0);
+			}
+		} catch (IOException ignored) {}
+		return null;
 	}
 
 	@Nullable
@@ -244,7 +373,7 @@ public class CustomSkinManager {
 
 			Minecraft.getInstance().getTextureManager().register(textureId, dynamicTexture);
 
-			LOGGER.info("Loaded custom skin from {} (Detected Model: {})", skinFile.getFileName(), model);
+			LOGGER.info("Loaded custom skin from {} (Model: {})", skinFile.getFileName(), model);
 			return new CachedSkin(skinFile, lastModified, textureId, dynamicTexture, model);
 		} catch (Exception e) {
 			LOGGER.error("Failed to read skin image from {}", skinFile, e);
@@ -294,7 +423,7 @@ public class CustomSkinManager {
 	}
 
 	/**
-	 * Automatically detects whether a 64x64 skin is SLIM (Alex / 3-pixel arms)
+	 * Automatically detects whether a skin is SLIM (Alex / 3-pixel arms)
 	 * or WIDE (Steve / 4-pixel arms) by checking transparency in the unused arm regions.
 	 */
 	public static PlayerSkin.Model detectModel(NativeImage image) {
@@ -302,7 +431,6 @@ public class CustomSkinManager {
 		int height = image.getHeight();
 
 		if (width != 64 || height != 64) {
-			// Check HD square skins (e.g. 128x128, 256x256)
 			if (width == height && width % 64 == 0) {
 				int scale = width / 64;
 				if (hasTransparency(image, 50 * scale, 16 * scale, 2 * scale, 4 * scale) ||
@@ -327,7 +455,7 @@ public class CustomSkinManager {
 			return PlayerSkin.Model.SLIM;
 		}
 
-		// Check if unused arm regions are solid black/white filler from certain skin creators
+		// Check if unused arm regions are solid black/white filler from certain skin tools
 		if ((isSolidColor(image, 54, 20, 2, 12, 0xFF000000) && isSolidColor(image, 46, 52, 2, 12, 0xFF000000)) ||
 			(isSolidColor(image, 54, 20, 2, 12, 0xFFFFFFFF) && isSolidColor(image, 46, 52, 2, 12, 0xFFFFFFFF))) {
 			return PlayerSkin.Model.SLIM;
