@@ -7,7 +7,9 @@
 		"PlayerInfoMixin",
 		"AbstractClientPlayerMixin",
 		"SkinManagerMixin",
-		"DefaultPlayerSkinMixin"
+		"DefaultPlayerSkinMixin",
+		"OptionsScreenMixin",
+		"SkinCustomizationScreenMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

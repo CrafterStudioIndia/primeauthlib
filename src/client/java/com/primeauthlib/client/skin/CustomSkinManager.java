@@ -2,6 +2,7 @@ package com.primeauthlib.client.skin;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.primeauthlib.PrimeAuthLib;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -12,6 +13,8 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
@@ -34,7 +38,24 @@ public class CustomSkinManager {
 	private static final Logger LOGGER = LoggerFactory.getLogger("primeauthlib-skins");
 	public static final String SKINS_DIR_NAME = "auth-libskins";
 
+	public enum ModelMode {
+		AUTO("Auto-Detect"),
+		SLIM("Slim (Alex)"),
+		WIDE("Wide (Steve)");
+
+		private final String displayName;
+
+		ModelMode(String displayName) {
+			this.displayName = displayName;
+		}
+
+		public String getDisplayName() {
+			return displayName;
+		}
+	}
+
 	private static Path skinsDir;
+	private static ModelMode currentModelMode = ModelMode.AUTO;
 	private static final Map<String, CachedSkin> CACHED_SKINS = new ConcurrentHashMap<>();
 	private static final Map<String, Long> LAST_CHECK_TIMES = new ConcurrentHashMap<>();
 	private static final long CHECK_INTERVAL_MS = 1000; // Check disk timestamp at most once per second per file
@@ -54,6 +75,8 @@ public class CustomSkinManager {
 				Files.createDirectories(skinsDir);
 				LOGGER.info("Created skins directory: {}", skinsDir.toAbsolutePath());
 			}
+
+			loadConfig();
 
 			Path readme = skinsDir.resolve("README.txt");
 			if (!Files.exists(readme)) {
@@ -76,6 +99,7 @@ public class CustomSkinManager {
 					
 					Features:
 					- Model Auto-Detection: Automatically detects Slim (Alex / 3-pixel arms) vs Wide (Steve / 4-pixel arms).
+					- In-Game GUI: Access via Options -> "Auth-Lib Skin..." or Skin Customization -> "Auth-Lib Skin...".
 					- Hot-Reloading: Replacing or saving the PNG file updates in-game immediately without restarting!
 					- Completely bypasses server-side skin limits, offline mode limits, and third-party skin APIs.
 					""";
@@ -93,6 +117,45 @@ public class CustomSkinManager {
 		return skinsDir;
 	}
 
+	public static ModelMode getModelMode() {
+		return currentModelMode;
+	}
+
+	public static void setModelMode(ModelMode mode) {
+		currentModelMode = mode;
+		saveConfig();
+		reloadAll();
+	}
+
+	private static void loadConfig() {
+		Path configFile = getSkinsDir().resolve("config.properties");
+		if (Files.exists(configFile)) {
+			try (InputStream is = Files.newInputStream(configFile)) {
+				Properties props = new Properties();
+				props.load(is);
+				String modeStr = props.getProperty("model_mode", "AUTO");
+				try {
+					currentModelMode = ModelMode.valueOf(modeStr.toUpperCase(Locale.ROOT));
+				} catch (IllegalArgumentException ignored) {
+					currentModelMode = ModelMode.AUTO;
+				}
+			} catch (IOException e) {
+				LOGGER.warn("Failed to load config.properties", e);
+			}
+		}
+	}
+
+	private static void saveConfig() {
+		Path configFile = getSkinsDir().resolve("config.properties");
+		try (FileOutputStream os = new FileOutputStream(configFile.toFile())) {
+			Properties props = new Properties();
+			props.setProperty("model_mode", currentModelMode.name());
+			props.store(os, "PrimeAuthLib Configuration");
+		} catch (IOException e) {
+			LOGGER.warn("Failed to save config.properties", e);
+		}
+	}
+
 	/**
 	 * Computes the deterministic offline-mode UUID for a player nickname,
 	 * matching standard vanilla Minecraft offline server logic.
@@ -106,6 +169,11 @@ public class CustomSkinManager {
 	 */
 	@Nullable
 	public static PlayerSkin getCustomSkin(@Nullable GameProfile profile, @Nullable PlayerSkin originalSkin) {
+		// Prevent redundant wrapping if already using our custom skin
+		if (originalSkin != null && originalSkin.texture() != null && originalSkin.texture().getNamespace().equals(PrimeAuthLib.MOD_ID)) {
+			return originalSkin;
+		}
+
 		if (profile == null) {
 			return originalSkin;
 		}
@@ -119,6 +187,10 @@ public class CustomSkinManager {
 	 */
 	@Nullable
 	public static PlayerSkin getCustomSkinByUuid(@Nullable UUID uuid, @Nullable PlayerSkin originalSkin) {
+		if (originalSkin != null && originalSkin.texture() != null && originalSkin.texture().getNamespace().equals(PrimeAuthLib.MOD_ID)) {
+			return originalSkin;
+		}
+
 		if (uuid == null) {
 			return originalSkin;
 		}
@@ -137,43 +209,111 @@ public class CustomSkinManager {
 			String cacheKey = skinFile.toAbsolutePath().toString();
 			long now = System.currentTimeMillis();
 			Long lastCheck = LAST_CHECK_TIMES.get(cacheKey);
-
 			CachedSkin cached = CACHED_SKINS.get(cacheKey);
+
+			// Fast cache path: avoid touching the filesystem repeatedly every frame
+			if (cached != null && lastCheck != null && (now - lastCheck < CHECK_INTERVAL_MS)) {
+				return createPlayerSkin(cached, originalSkin);
+			}
+
+			// Check filesystem timestamp only when interval has elapsed or not yet cached
+			LAST_CHECK_TIMES.put(cacheKey, now);
 			long fileLastModified = Files.getLastModifiedTime(skinFile).toMillis();
 
-			if (cached == null || (lastCheck == null || (now - lastCheck > CHECK_INTERVAL_MS) && fileLastModified != cached.lastModified())) {
-				LAST_CHECK_TIMES.put(cacheKey, now);
-
-				if (cached != null && fileLastModified != cached.lastModified()) {
-					// Release previous texture from GPU memory
+			if (cached == null || fileLastModified != cached.lastModified()) {
+				// Thread safety: texture operations must run on render thread
+				if (RenderSystem.isOnRenderThread()) {
+					if (cached != null && fileLastModified != cached.lastModified()) {
+						Minecraft.getInstance().getTextureManager().release(cached.textureId());
+						cached.texture().close();
+					}
+					cached = loadAndRegisterSkin(skinFile, fileLastModified);
+					if (cached != null) {
+						CACHED_SKINS.put(cacheKey, cached);
+					}
+				} else {
+					// Off render thread: schedule upload on render thread and return previous or fallback
 					final CachedSkin oldCached = cached;
 					Minecraft.getInstance().execute(() -> {
-						Minecraft.getInstance().getTextureManager().release(oldCached.textureId());
-						oldCached.texture().close();
+						if (oldCached != null && fileLastModified != oldCached.lastModified()) {
+							Minecraft.getInstance().getTextureManager().release(oldCached.textureId());
+							oldCached.texture().close();
+						}
+						CachedSkin newCached = loadAndRegisterSkin(skinFile, fileLastModified);
+						if (newCached != null) {
+							CACHED_SKINS.put(cacheKey, newCached);
+						}
 					});
-				}
-
-				cached = loadAndRegisterSkin(skinFile, fileLastModified);
-				if (cached != null) {
-					CACHED_SKINS.put(cacheKey, cached);
 				}
 			}
 
 			if (cached != null) {
-				return new PlayerSkin(
-					cached.textureId(),
-					null,
-					originalSkin != null ? originalSkin.capeTexture() : null,
-					originalSkin != null ? originalSkin.elytraTexture() : null,
-					cached.model(),
-					true // Set secure to true so client treats it as verified
-				);
+				return createPlayerSkin(cached, originalSkin);
 			}
 		} catch (Exception e) {
 			LOGGER.error("Error loading custom skin from {}", skinFile, e);
 		}
 
 		return originalSkin;
+	}
+
+	private static PlayerSkin createPlayerSkin(CachedSkin cached, @Nullable PlayerSkin originalSkin) {
+		PlayerSkin.Model modelToUse = switch (currentModelMode) {
+			case SLIM -> PlayerSkin.Model.SLIM;
+			case WIDE -> PlayerSkin.Model.WIDE;
+			case AUTO -> cached.model();
+		};
+
+		return new PlayerSkin(
+			cached.textureId(),
+			null,
+			originalSkin != null ? originalSkin.capeTexture() : null,
+			originalSkin != null ? originalSkin.elytraTexture() : null,
+			modelToUse,
+			true // secure: true to bypass any client security warnings
+		);
+	}
+
+	@Nullable
+	public static PlayerSkin getLocalPlayerPreviewSkin() {
+		Minecraft client = Minecraft.getInstance();
+		if (client == null) {
+			return null;
+		}
+
+		GameProfile profile = null;
+		if (client.player != null) {
+			profile = client.player.getGameProfile();
+		} else if (client.getUser() != null) {
+			profile = new GameProfile(client.getUser().getProfileId(), client.getUser().getName());
+		}
+
+		if (profile == null) {
+			profile = new GameProfile(UUID.randomUUID(), "Player");
+		}
+
+		return getCustomSkin(profile, null);
+	}
+
+	@Nullable
+	public static Path getActiveLocalSkinFile() {
+		Minecraft client = Minecraft.getInstance();
+		if (client == null) {
+			return null;
+		}
+
+		GameProfile profile = null;
+		if (client.player != null) {
+			profile = client.player.getGameProfile();
+		} else if (client.getUser() != null) {
+			profile = new GameProfile(client.getUser().getProfileId(), client.getUser().getName());
+		}
+
+		if (profile == null) {
+			profile = new GameProfile(UUID.randomUUID(), "Player");
+		}
+
+		return findSkinFileForProfile(profile);
 	}
 
 	@Nullable
@@ -217,7 +357,7 @@ public class CustomSkinManager {
 				return skinPng;
 			}
 
-			// If the user dropped exactly ONE .png in auth-libskins, automatically apply it to local user
+			// If user dropped exactly ONE .png in auth-libskins, automatically apply it to local user
 			Path singlePng = findSingleSkinFile(dir);
 			if (singlePng != null) {
 				return singlePng;
@@ -360,7 +500,7 @@ public class CustomSkinManager {
 			NativeImage original = NativeImage.read(is);
 			NativeImage processed = ensureStandardDimensions(original);
 
-			PlayerSkin.Model model = detectModel(processed);
+			PlayerSkin.Model detectedModel = detectModel(processed);
 
 			DynamicTexture dynamicTexture = new DynamicTexture(processed);
 			dynamicTexture.upload();
@@ -373,8 +513,8 @@ public class CustomSkinManager {
 
 			Minecraft.getInstance().getTextureManager().register(textureId, dynamicTexture);
 
-			LOGGER.info("Loaded custom skin from {} (Model: {})", skinFile.getFileName(), model);
-			return new CachedSkin(skinFile, lastModified, textureId, dynamicTexture, model);
+			LOGGER.info("Loaded custom skin from {} (Detected Model: {})", skinFile.getFileName(), detectedModel);
+			return new CachedSkin(skinFile, lastModified, textureId, dynamicTexture, detectedModel);
 		} catch (Exception e) {
 			LOGGER.error("Failed to read skin image from {}", skinFile, e);
 			return null;
