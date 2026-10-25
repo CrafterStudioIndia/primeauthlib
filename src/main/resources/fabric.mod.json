@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"id": "primeauthlib",
+	"version": "${version}",
+	"name": "PrimeAuthLib",
+	"description": "Fabric authentication and utility library for Minecraft 1.21.11.",
+	"authors": [
+		"Crafter"
+	],
+	"contact": {},
+	"license": "MIT",
+	"icon": "assets/primeauthlib/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.primeauthlib.PrimeAuthLib"
+		],
+		"client": [
+			"com.primeauthlib.client.PrimeAuthLibClient"
+		]
+	},
+	"mixins": [
+		"primeauthlib.mixins.json",
+		{
+			"config": "primeauthlib.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}
+

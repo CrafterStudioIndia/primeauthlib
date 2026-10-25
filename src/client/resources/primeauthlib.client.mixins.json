@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "com.primeauthlib.client.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"client": [
+		"PrimeAuthLibClientMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}
+
