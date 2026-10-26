@@ -62,16 +62,6 @@ public class PrimeAuthLibClient implements ClientModInitializer {
 			);
 
 			dispatcher.register(
-				ClientCommands.literal("skin")
-					.executes(context -> {
-						Minecraft.getInstance().execute(() -> {
-							Minecraft.getInstance().gui.setScreen(new AuthLibSkinScreen(Minecraft.getInstance().gui.screen()));
-						});
-						return 1;
-					})
-			);
-
-			dispatcher.register(
 				ClientCommands.literal("primeskin")
 					.executes(context -> {
 						Minecraft.getInstance().execute(() -> {
@@ -86,6 +76,11 @@ public class PrimeAuthLibClient implements ClientModInitializer {
 					.then(ClientCommands.literal("reload").executes(context -> {
 						CustomSkinManager.reloadAll();
 						context.getSource().sendFeedback(Component.literal("§a[PrimeAuthLib] Reloaded all custom skins from auth-libskins/"));
+						return 1;
+					}))
+					.then(ClientCommands.literal("retryserver").executes(context -> {
+						var res = com.primeauthlib.client.skin.ServerSkinManager.retryLastCommand();
+						context.getSource().sendFeedback(Component.literal(res.success() ? "§a[PrimeAuthLib] " + res.message() : "§c[PrimeAuthLib] " + res.message()));
 						return 1;
 					}))
 					.executes(context -> {

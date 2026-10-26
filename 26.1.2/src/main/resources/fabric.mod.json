@@ -1,0 +1,44 @@
+{
+	"schemaVersion": 1,
+	"id": "primeauthlib",
+	"version": "${version}",
+	"name": "PrimeAuthLib",
+	"description": "Zero-config offline & online custom skin loader with in-game 3D preview, model auto-detection (Slim/Wide), and built-in Authlib Injector for Minecraft 26.1.2.",
+	"authors": [
+		"Crafter"
+	],
+	"contact": {
+		"sources": "https://github.com/crafterstudioindia/primeauthlib",
+		"issues": "https://github.com/crafterstudioindia/primeauthlib/issues"
+	},
+	"license": "MIT",
+	"icon": "assets/primeauthlib/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.primeauthlib.PrimeAuthLib"
+		],
+		"client": [
+			"com.primeauthlib.client.PrimeAuthLibClient"
+		],
+		"modmenu": [
+			"com.primeauthlib.client.compat.PrimeAuthLibModMenu"
+		]
+	},
+	"mixins": [
+		"primeauthlib.mixins.json",
+		{
+			"config": "primeauthlib.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*"
+	}
+}

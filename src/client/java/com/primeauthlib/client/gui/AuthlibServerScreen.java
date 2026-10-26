@@ -10,6 +10,7 @@ import net.minecraft.network.chat.Component;
 
 /**
  * Screen to configure custom remote Authlib-Injector API servers (e.g. LittleSkin, Ely.by, Blessing Skin).
+ * Clean native Minecraft style without clunky tab bars.
  */
 public class AuthlibServerScreen extends Screen {
 	private final Screen parent;
@@ -26,76 +27,92 @@ public class AuthlibServerScreen extends Screen {
 
 		this.urlField = new EditBox(
 			this.font,
-			this.width / 2 - 150,
-			70,
-			300,
+			this.width / 2 - 155,
+			50,
+			310,
 			20,
 			Component.literal("Authlib Server URL")
 		);
 		this.urlField.setMaxLength(512);
 		this.urlField.setValue(AuthlibInjector.getAuthlibServerUrl());
+		this.urlField.setHint(Component.literal("e.g. https://littleskin.cn/api/yggdrasil"));
 		this.addRenderableWidget(this.urlField);
 
-		// Preset: LittleSkin
-		Button littleSkinBtn = Button.builder(Component.literal("Preset: LittleSkin"), b -> {
+		// Preset buttons (width 150 each)
+		Button littleSkinBtn = Button.builder(Component.literal("⚡ Preset: LittleSkin"), b -> {
 			this.urlField.setValue("https://littleskin.cn/api/yggdrasil");
 		})
-		.bounds(this.width / 2 - 150, 100, 145, 20)
+		.bounds(this.width / 2 - 155, 78, 150, 20)
 		.build();
 		this.addRenderableWidget(littleSkinBtn);
 
-		// Preset: Ely.by
-		Button elyByBtn = Button.builder(Component.literal("Preset: Ely.by"), b -> {
+		Button elyByBtn = Button.builder(Component.literal("⚡ Preset: Ely.by"), b -> {
 			this.urlField.setValue("https://authserver.ely.by/api/authlib-injector");
 		})
-		.bounds(this.width / 2 + 5, 100, 145, 20)
+		.bounds(this.width / 2 + 5, 78, 150, 20)
 		.build();
 		this.addRenderableWidget(elyByBtn);
 
-		// Save Button
-		Button saveBtn = Button.builder(Component.literal("Save"), b -> {
+		// Bottom row: Save (100) | Clear (100) | Done (100)
+		Button saveBtn = Button.builder(Component.literal("💾 Save"), b -> {
 			AuthlibInjector.setAuthlibServerUrl(this.urlField.getValue());
 			CustomSkinManager.saveConfig();
 			CustomSkinManager.reloadAll();
 			this.onClose();
 		})
-		.bounds(this.width / 2 - 150, this.height - 40, 95, 20)
+		.bounds(this.width / 2 - 155, this.height - 30, 100, 20)
 		.build();
 		this.addRenderableWidget(saveBtn);
 
-		// Clear Button
-		Button clearBtn = Button.builder(Component.literal("Clear"), b -> {
+		Button clearBtn = Button.builder(Component.literal("🗑️ Clear"), b -> {
 			this.urlField.setValue("");
 			AuthlibInjector.setAuthlibServerUrl("");
 			CustomSkinManager.saveConfig();
 			CustomSkinManager.reloadAll();
 		})
-		.bounds(this.width / 2 - 45, this.height - 40, 90, 20)
+		.bounds(this.width / 2 - 50, this.height - 30, 100, 20)
 		.build();
 		this.addRenderableWidget(clearBtn);
 
-		// Cancel Button
-		Button cancelBtn = Button.builder(Component.literal("Cancel"), b -> {
+		Button doneBtn = Button.builder(Component.literal("Done"), b -> {
 			this.onClose();
 		})
-		.bounds(this.width / 2 + 55, this.height - 40, 95, 20)
+		.bounds(this.width / 2 + 55, this.height - 30, 100, 20)
 		.build();
-		this.addRenderableWidget(cancelBtn);
+		this.addRenderableWidget(doneBtn);
 	}
 
 	@Override
 	public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		super.render(graphics, mouseX, mouseY, delta);
 
-		graphics.drawCenteredString(this.font, this.title, this.width / 2, 20, 0xFFFFFF);
-		graphics.drawCenteredString(this.font, Component.literal("Enter Authlib-Injector API Root URL (or leave blank for local-only skins):"), this.width / 2, 52, 0xAAAAAA);
+		// Title & Subtitle
+		graphics.drawCenteredString(this.font, Component.literal("§lRemote Authlib-Injector API Server"), this.width / 2, 12, 0xFFFFFF);
+		graphics.drawCenteredString(this.font, Component.literal("§7Connect custom authentication servers or leave empty for local skins"), this.width / 2, 22, 0x888888);
 
-		String status = AuthlibInjector.hasServerUrl()
-			? "Configured: §a" + AuthlibInjector.getAuthlibServerUrl()
-			: "Status: §eLocal In-Game Authlib Injection Active (No external server)";
-		graphics.drawCenteredString(this.font, Component.literal(status), this.width / 2, 135, 0xCCCCCC);
+		graphics.drawString(this.font, Component.literal("§fAuthlib API Root URL:"), this.width / 2 - 155, 38, 0xDDDDDD);
 
-		graphics.drawCenteredString(this.font, Component.literal("§7Bypasses all server limitations and loads skin textures in-game."), this.width / 2, 155, 0x777777);
+		// Status card
+		int statusY = 108;
+		int statusBottom = this.height - 40;
+		if (statusBottom > statusY + 20) {
+			graphics.fill(this.width / 2 - 155, statusY, this.width / 2 + 155, statusBottom, 0x44000000);
+			drawCardOutline(graphics, this.width / 2 - 155, statusY, this.width / 2 + 155, statusBottom, 0x33FFFFFF);
+
+			String status = AuthlibInjector.hasServerUrl()
+				? "§aConfigured: " + AuthlibInjector.getAuthlibServerUrl()
+				: "§eStatus: Local In-Game Authlib Injection Active";
+			graphics.drawCenteredString(this.font, Component.literal(status), this.width / 2, statusY + 8, 0xCCCCCC);
+			graphics.drawCenteredString(this.font, Component.literal("§7Bypasses server restrictions and renders custom skins in-game."), this.width / 2, statusY + 22, 0x777777);
+			graphics.drawCenteredString(this.font, Component.literal("§7No external authlib server is needed for normal skin usage."), this.width / 2, statusY + 34, 0x777777);
+		}
+	}
+
+	private void drawCardOutline(GuiGraphics graphics, int left, int top, int right, int bottom, int borderColor) {
+		graphics.fill(left, top, right, top + 1, borderColor);
+		graphics.fill(left, bottom - 1, right, bottom, borderColor);
+		graphics.fill(left, top, left + 1, bottom, borderColor);
+		graphics.fill(right - 1, top, right, bottom, borderColor);
 	}
 
 	@Override
@@ -105,4 +122,3 @@ public class AuthlibServerScreen extends Screen {
 		}
 	}
 }
-
