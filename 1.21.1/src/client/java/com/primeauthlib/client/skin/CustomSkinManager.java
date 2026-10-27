@@ -71,13 +71,28 @@ public class CustomSkinManager {
 	private static final Map<String, Long> LAST_CHECK_TIMES = new ConcurrentHashMap<>();
 	private static final long CHECK_INTERVAL_MS = 1000;
 
+	// In-memory directory index and negative/positive lookup caches for 144+ FPS on servers
+	private static final Map<String, Path> FILE_NAME_INDEX = new ConcurrentHashMap<>();
+	private static volatile List<Path> cachedAvailableSkins = null;
+	private static volatile long lastDirCheckTime = 0;
+	private static volatile long lastKnownDirModified = -1;
+	private static final long DIR_POLL_INTERVAL_MS = 3000;
+
+	private static final Map<UUID, PlayerSkin> UUID_SKIN_CACHE = new ConcurrentHashMap<>();
+	private static final java.util.Set<UUID> NEGATIVE_UUID_CACHE = ConcurrentHashMap.newKeySet();
+
+	private static volatile String cachedLocalName = null;
+	private static volatile UUID cachedLocalUuid = null;
+	private static volatile UUID cachedLocalOfflineUuid = null;
+
 	private record CachedSkin(
 		Path path,
 		long lastModified,
 		ResourceLocation assetId,
 		ResourceLocation texturePath,
 		DynamicTexture texture,
-		PlayerSkin.Model model
+		PlayerSkin.Model model,
+		PlayerSkin baseSkin
 	) {}
 
 	public static void init() {
@@ -130,6 +145,7 @@ public class CustomSkinManager {
 			}
 
 			loadConfig();
+			refreshFileIndex();
 
 			if (isNewDir) {
 				LOGGER.info("Successfully created and configured {} folder for Minecraft {}", SKINS_DIR_NAME, mcVersion);
@@ -168,21 +184,60 @@ public class CustomSkinManager {
 		reloadAll();
 	}
 
-	public static List<Path> getAvailableSkins() {
+	public static synchronized void refreshFileIndex() {
 		Path dir = getSkinsDir();
 		if (!Files.exists(dir)) {
-			return List.of();
+			FILE_NAME_INDEX.clear();
+			cachedAvailableSkins = List.of();
+			return;
 		}
-
+		Map<String, Path> newIndex = new HashMap<>();
+		List<Path> skins = new java.util.ArrayList<>();
 		try (Stream<Path> stream = Files.list(dir)) {
-			return stream
-				.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png"))
-				.sorted((a, b) -> a.getFileName().toString().compareToIgnoreCase(b.getFileName().toString()))
-				.toList();
+			stream.filter(Files::isRegularFile).forEach(p -> {
+				String name = p.getFileName().toString();
+				String lower = name.toLowerCase(Locale.ROOT);
+				if (lower.endsWith(".png")) {
+					newIndex.put(lower, p);
+					skins.add(p);
+				}
+			});
 		} catch (IOException e) {
-			LOGGER.error("Failed to list available skins in {}", dir, e);
-			return List.of();
+			LOGGER.error("Failed to index skins directory", e);
 		}
+		skins.sort((a, b) -> a.getFileName().toString().compareToIgnoreCase(b.getFileName().toString()));
+		FILE_NAME_INDEX.clear();
+		FILE_NAME_INDEX.putAll(newIndex);
+		cachedAvailableSkins = java.util.Collections.unmodifiableList(skins);
+		try {
+			lastKnownDirModified = Files.getLastModifiedTime(dir).toMillis();
+		} catch (Exception ignored) {}
+	}
+
+	private static void checkDirectoryUpdateIfNeeded() {
+		long now = System.currentTimeMillis();
+		if (now - lastDirCheckTime < DIR_POLL_INTERVAL_MS) {
+			return;
+		}
+		lastDirCheckTime = now;
+		try {
+			Path dir = getSkinsDir();
+			if (Files.exists(dir)) {
+				long modified = Files.getLastModifiedTime(dir).toMillis();
+				if (modified != lastKnownDirModified) {
+					refreshFileIndex();
+					invalidateSkinCaches();
+				}
+			}
+		} catch (Exception ignored) {}
+	}
+
+	public static List<Path> getAvailableSkins() {
+		checkDirectoryUpdateIfNeeded();
+		if (cachedAvailableSkins == null) {
+			refreshFileIndex();
+		}
+		return cachedAvailableSkins;
 	}
 
 	public static int getSelectedSkinIndex() {
@@ -660,35 +715,122 @@ public class CustomSkinManager {
 		return UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(StandardCharsets.UTF_8));
 	}
 
+	private static boolean isPrimeAuthSkin(@Nullable PlayerSkin skin) {
+		return skin != null && skin.texture() != null && skin.texture().getNamespace().equals(PrimeAuthLib.MOD_ID);
+	}
+
 	@Nullable
-	public static PlayerSkin getCustomSkin(GameProfile profile, @Nullable PlayerSkin originalSkin) {
-		Path skinFile = findSkinFileForProfile(profile);
-		if (skinFile == null || !Files.exists(skinFile)) {
+	public static PlayerSkin getCustomSkin(@Nullable GameProfile profile, @Nullable PlayerSkin originalSkin) {
+		if (originalSkin != null && isPrimeAuthSkin(originalSkin)) {
+			return originalSkin;
+		}
+
+		if (profile == null) {
+			return originalSkin;
+		}
+
+		UUID id = profile.getId();
+		if (id != null) {
+			if (NEGATIVE_UUID_CACHE.contains(id)) {
+				return originalSkin;
+			}
+			PlayerSkin cached = UUID_SKIN_CACHE.get(id);
+			if (cached != null) {
+				return combineAccessories(cached, originalSkin);
+			}
+		}
+
+		if (FILE_NAME_INDEX.isEmpty()) {
+			checkDirectoryUpdateIfNeeded();
+			if (FILE_NAME_INDEX.isEmpty()) {
+				if (id != null) NEGATIVE_UUID_CACHE.add(id);
+				return originalSkin;
+			}
+		}
+
+		Path skinFile = findSkinFileForProfile(profile, originalSkin);
+		if (skinFile == null) {
+			if (id != null) {
+				NEGATIVE_UUID_CACHE.add(id);
+			}
+			return originalSkin;
+		}
+
+		PlayerSkin customSkin = applySkinFromFile(skinFile, originalSkin);
+		if (customSkin != null && customSkin != originalSkin) {
+			if (id != null) {
+				UUID_SKIN_CACHE.put(id, customSkin);
+			}
+			return customSkin;
+		} else {
+			if (id != null) {
+				NEGATIVE_UUID_CACHE.add(id);
+			}
+			return originalSkin;
+		}
+	}
+
+	@Nullable
+	public static PlayerSkin getCustomSkinByUuid(@Nullable UUID uuid, @Nullable PlayerSkin originalSkin) {
+		if (originalSkin != null && isPrimeAuthSkin(originalSkin)) {
+			return originalSkin;
+		}
+
+		if (uuid == null) {
+			return originalSkin;
+		}
+
+		if (NEGATIVE_UUID_CACHE.contains(uuid)) {
+			return originalSkin;
+		}
+
+		PlayerSkin cached = UUID_SKIN_CACHE.get(uuid);
+		if (cached != null) {
+			return combineAccessories(cached, originalSkin);
+		}
+
+		if (FILE_NAME_INDEX.isEmpty()) {
+			checkDirectoryUpdateIfNeeded();
+			if (FILE_NAME_INDEX.isEmpty()) {
+				NEGATIVE_UUID_CACHE.add(uuid);
+				return originalSkin;
+			}
+		}
+
+		Path skinFile = findSkinFileForUuid(uuid, originalSkin);
+		if (skinFile == null) {
+			NEGATIVE_UUID_CACHE.add(uuid);
+			return originalSkin;
+		}
+
+		PlayerSkin customSkin = applySkinFromFile(skinFile, originalSkin);
+		if (customSkin != null && customSkin != originalSkin) {
+			UUID_SKIN_CACHE.put(uuid, customSkin);
+			return customSkin;
+		} else {
+			NEGATIVE_UUID_CACHE.add(uuid);
+			return originalSkin;
+		}
+	}
+
+	@Nullable
+	private static PlayerSkin applySkinFromFile(@Nullable Path skinFile, @Nullable PlayerSkin originalSkin) {
+		if (skinFile == null) {
 			return originalSkin;
 		}
 
 		try {
 			String cacheKey = skinFile.toAbsolutePath().toString();
-			long now = System.currentTimeMillis();
-			Long lastCheck = LAST_CHECK_TIMES.get(cacheKey);
-
 			CachedSkin cached = CACHED_SKINS.get(cacheKey);
-			long lastModified = Files.getLastModifiedTime(skinFile).toMillis();
 
-			if (lastCheck != null && (now - lastCheck < CHECK_INTERVAL_MS) && cached != null && cached.lastModified() == lastModified) {
+			if (cached != null) {
 				return createPlayerSkin(cached, originalSkin);
 			}
 
-			LAST_CHECK_TIMES.put(cacheKey, now);
-
-			if (cached == null || cached.lastModified() != lastModified) {
-				cached = loadAndRegisterSkin(skinFile, lastModified);
-				if (cached != null) {
-					CACHED_SKINS.put(cacheKey, cached);
-				}
-			}
-
+			long lastModified = Files.exists(skinFile) ? Files.getLastModifiedTime(skinFile).toMillis() : 0;
+			cached = loadAndRegisterSkin(skinFile, lastModified);
 			if (cached != null) {
+				CACHED_SKINS.put(cacheKey, cached);
 				return createPlayerSkin(cached, originalSkin);
 			}
 		} catch (Exception e) {
@@ -698,42 +840,18 @@ public class CustomSkinManager {
 		return originalSkin;
 	}
 
-	@Nullable
-	public static PlayerSkin getCustomSkinByUuid(UUID uuid, @Nullable PlayerSkin originalSkin) {
-		Path skinFile = findSkinFileForUuid(uuid);
-		if (skinFile == null || !Files.exists(skinFile)) {
-			return originalSkin;
+	private static PlayerSkin combineAccessories(PlayerSkin cached, @Nullable PlayerSkin originalSkin) {
+		if (originalSkin == null || (originalSkin.capeTexture() == null && originalSkin.elytraTexture() == null)) {
+			return cached;
 		}
-
-		try {
-			String cacheKey = skinFile.toAbsolutePath().toString();
-			long now = System.currentTimeMillis();
-			Long lastCheck = LAST_CHECK_TIMES.get(cacheKey);
-
-			CachedSkin cached = CACHED_SKINS.get(cacheKey);
-			long lastModified = Files.getLastModifiedTime(skinFile).toMillis();
-
-			if (lastCheck != null && (now - lastCheck < CHECK_INTERVAL_MS) && cached != null && cached.lastModified() == lastModified) {
-				return createPlayerSkin(cached, originalSkin);
-			}
-
-			LAST_CHECK_TIMES.put(cacheKey, now);
-
-			if (cached == null || cached.lastModified() != lastModified) {
-				cached = loadAndRegisterSkin(skinFile, lastModified);
-				if (cached != null) {
-					CACHED_SKINS.put(cacheKey, cached);
-				}
-			}
-
-			if (cached != null) {
-				return createPlayerSkin(cached, originalSkin);
-			}
-		} catch (Exception e) {
-			LOGGER.error("Failed to load skin from {}", skinFile, e);
-		}
-
-		return originalSkin;
+		return new PlayerSkin(
+			cached.texture(),
+			cached.textureUrl(),
+			originalSkin.capeTexture(),
+			originalSkin.elytraTexture(),
+			cached.model(),
+			true
+		);
 	}
 
 	private static PlayerSkin createPlayerSkin(CachedSkin cached, @Nullable PlayerSkin originalSkin) {
@@ -743,11 +861,18 @@ public class CustomSkinManager {
 			case AUTO -> cached.model();
 		};
 
+		boolean hasCape = originalSkin != null && originalSkin.capeTexture() != null;
+		boolean hasElytra = originalSkin != null && originalSkin.elytraTexture() != null;
+
+		if (!hasCape && !hasElytra && modelToUse == cached.model()) {
+			return cached.baseSkin();
+		}
+
 		return new PlayerSkin(
 			cached.texturePath(),
 			null,
-			originalSkin != null ? originalSkin.capeTexture() : null,
-			originalSkin != null ? originalSkin.elytraTexture() : null,
+			hasCape ? originalSkin.capeTexture() : null,
+			hasElytra ? originalSkin.elytraTexture() : null,
 			modelToUse,
 			true
 		);
@@ -798,8 +923,8 @@ public class CustomSkinManager {
 		}
 
 		if (selectedSkinFileName != null && !selectedSkinFileName.isEmpty()) {
-			Path selected = resolveFileCaseInsensitive(getSkinsDir(), selectedSkinFileName);
-			if (selected != null && Files.exists(selected)) {
+			Path selected = resolveFileIndexed(selectedSkinFileName);
+			if (selected != null) {
 				return selected;
 			}
 		}
@@ -807,10 +932,17 @@ public class CustomSkinManager {
 		return null;
 	}
 
+	public static void invalidateSkinCaches() {
+		UUID_SKIN_CACHE.clear();
+		NEGATIVE_UUID_CACHE.clear();
+	}
+
 	public static void reloadAll() {
 		CACHED_SKINS.clear();
 		LAST_CHECK_TIMES.clear();
-		LOGGER.info("Cleared custom skin cache; reloading all skins from {}", SKINS_DIR_NAME);
+		invalidateSkinCaches();
+		refreshFileIndex();
+		LOGGER.info("Cleared custom skin cache; re-indexed skins from {}", SKINS_DIR_NAME);
 	}
 
 	@Nullable
@@ -908,98 +1040,117 @@ public class CustomSkinManager {
 
 	@Nullable
 	public static Path findSkinFileForProfile(GameProfile profile) {
-		Path dir = getSkinsDir();
-		if (!Files.exists(dir)) {
+		return findSkinFileForProfile(profile, null);
+	}
+
+	@Nullable
+	public static Path findSkinFileForProfile(GameProfile profile, @Nullable PlayerSkin originalSkin) {
+		checkDirectoryUpdateIfNeeded();
+		if (FILE_NAME_INDEX.isEmpty() || profile == null) {
 			return null;
 		}
 
 		String name = profile.getName();
 		UUID id = profile.getId();
 
+		// 1. Check exact player name
 		if (name != null && !name.isEmpty()) {
-			Path byName = resolveFileCaseInsensitive(dir, name + ".png");
+			Path byName = resolveFileIndexed(name + ".png");
 			if (byName != null) {
 				return byName;
 			}
 		}
 
+		// 2. Check exact player UUID
 		if (id != null) {
-			Path byUuid = resolveUuidFile(dir, id);
+			Path byUuid = resolveUuidIndexed(id);
 			if (byUuid != null) {
 				return byUuid;
 			}
 		}
 
+		// 3. Check offline UUID (for cracked accounts)
 		if (name != null && !name.isEmpty()) {
 			UUID offlineUuid = getOfflinePlayerUuid(name);
-			Path byOfflineUuid = resolveUuidFile(dir, offlineUuid);
+			Path byOfflineUuid = resolveUuidIndexed(offlineUuid);
 			if (byOfflineUuid != null) {
 				return byOfflineUuid;
 			}
 		}
 
+		// 4. If it's the local client player:
 		if (isLocalPlayer(name, id)) {
+			// Check user-selected skin from carousel first
 			if (selectedSkinFileName != null && !selectedSkinFileName.isEmpty()) {
-				Path selected = resolveFileCaseInsensitive(dir, selectedSkinFileName);
-				if (selected != null && Files.exists(selected)) {
+				Path selected = resolveFileIndexed(selectedSkinFileName);
+				if (selected != null) {
 					return selected;
 				}
 			}
 
-			Path skinPng = resolveFileCaseInsensitive(dir, "skin.png");
+			// Then check default skin.png
+			Path skinPng = resolveFileIndexed("skin.png");
 			if (skinPng != null) {
 				return skinPng;
 			}
 
-			Path singlePng = findSingleSkinFile(dir);
-			if (singlePng != null) {
-				return singlePng;
+			// If only one skin file exists in the directory, use it
+			if (FILE_NAME_INDEX.size() == 1) {
+				return FILE_NAME_INDEX.values().iterator().next();
 			}
 		}
 
-		Path defaultPng = resolveFileCaseInsensitive(dir, "default.png");
-		if (defaultPng != null) {
-			return defaultPng;
+		// 5. Fallback to default.png ONLY if player has no original skin (cracked/offline)
+		if (originalSkin == null) {
+			Path defaultPng = resolveFileIndexed("default.png");
+			if (defaultPng != null) {
+				return defaultPng;
+			}
 		}
 
 		return null;
 	}
 
 	@Nullable
-	private static Path findSkinFileForUuid(UUID uuid) {
-		Path dir = getSkinsDir();
-		if (!Files.exists(dir)) {
+	public static Path findSkinFileForUuid(UUID uuid) {
+		return findSkinFileForUuid(uuid, null);
+	}
+
+	@Nullable
+	public static Path findSkinFileForUuid(UUID uuid, @Nullable PlayerSkin originalSkin) {
+		checkDirectoryUpdateIfNeeded();
+		if (FILE_NAME_INDEX.isEmpty() || uuid == null) {
 			return null;
 		}
 
-		Path byUuid = resolveUuidFile(dir, uuid);
+		Path byUuid = resolveUuidIndexed(uuid);
 		if (byUuid != null) {
 			return byUuid;
 		}
 
-		Minecraft client = Minecraft.getInstance();
-		if (client != null && isLocalPlayer(null, uuid)) {
+		if (isLocalPlayer(null, uuid)) {
 			if (selectedSkinFileName != null && !selectedSkinFileName.isEmpty()) {
-				Path selected = resolveFileCaseInsensitive(dir, selectedSkinFileName);
-				if (selected != null && Files.exists(selected)) {
+				Path selected = resolveFileIndexed(selectedSkinFileName);
+				if (selected != null) {
 					return selected;
 				}
 			}
 
-			Path skinPng = resolveFileCaseInsensitive(dir, "skin.png");
+			Path skinPng = resolveFileIndexed("skin.png");
 			if (skinPng != null) {
 				return skinPng;
 			}
 
-			Path singlePng = findSingleSkinFile(dir);
-			if (singlePng != null) {
-				return singlePng;
+			if (FILE_NAME_INDEX.size() == 1) {
+				return FILE_NAME_INDEX.values().iterator().next();
 			}
 		}
 
-		Path defaultPng = resolveFileCaseInsensitive(dir, "default.png");
-		if (defaultPng != null) {
-			return defaultPng;
+		if (originalSkin == null) {
+			Path defaultPng = resolveFileIndexed("default.png");
+			if (defaultPng != null) {
+				return defaultPng;
+			}
 		}
 
 		return null;
@@ -1015,15 +1166,19 @@ public class CustomSkinManager {
 			String localUsername = client.getUser().getName();
 			UUID localUserUuid = client.getUser().getProfileId();
 
+			if (localUsername != null && !localUsername.equals(cachedLocalName)) {
+				cachedLocalName = localUsername;
+				cachedLocalUuid = localUserUuid;
+				cachedLocalOfflineUuid = getOfflinePlayerUuid(localUsername);
+			}
+
 			if (name != null && localUsername != null && name.equalsIgnoreCase(localUsername)) {
 				return true;
 			}
-
 			if (id != null && localUserUuid != null && id.equals(localUserUuid)) {
 				return true;
 			}
-
-			if (id != null && localUsername != null && id.equals(getOfflinePlayerUuid(localUsername))) {
+			if (id != null && cachedLocalOfflineUuid != null && id.equals(cachedLocalOfflineUuid)) {
 				return true;
 			}
 		}
@@ -1041,45 +1196,29 @@ public class CustomSkinManager {
 	}
 
 	@Nullable
-	private static Path resolveUuidFile(Path dir, UUID uuid) {
+	private static Path resolveUuidIndexed(UUID uuid) {
+		if (uuid == null) return null;
 		String uuidStr = uuid.toString();
-		Path byUuid = resolveFileCaseInsensitive(dir, uuidStr + ".png");
+		Path byUuid = resolveFileIndexed(uuidStr + ".png");
 		if (byUuid != null) {
 			return byUuid;
 		}
 
 		String compactUuid = uuidStr.replace("-", "");
-		return resolveFileCaseInsensitive(dir, compactUuid + ".png");
+		return resolveFileIndexed(compactUuid + ".png");
 	}
 
 	@Nullable
-	private static Path resolveFileCaseInsensitive(Path dir, String fileName) {
-		Path direct = dir.resolve(fileName);
-		if (Files.exists(direct)) {
-			return direct;
-		}
-
-		try (Stream<Path> stream = Files.list(dir)) {
-			Optional<Path> found = stream
-				.filter(p -> p.getFileName().toString().equalsIgnoreCase(fileName))
-				.findFirst();
-			return found.orElse(null);
-		} catch (IOException e) {
+	private static Path resolveFileIndexed(String fileName) {
+		if (fileName == null || fileName.isEmpty()) {
 			return null;
 		}
+		return FILE_NAME_INDEX.get(fileName.toLowerCase(Locale.ROOT));
 	}
 
 	@Nullable
-	private static Path findSingleSkinFile(Path dir) {
-		try (Stream<Path> stream = Files.list(dir)) {
-			List<Path> pngFiles = stream
-				.filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png"))
-				.toList();
-			if (pngFiles.size() == 1) {
-				return pngFiles.get(0);
-			}
-		} catch (IOException ignored) {}
-		return null;
+	public static Path resolveFileCaseInsensitive(Path dir, String fileName) {
+		return resolveFileIndexed(fileName);
 	}
 
 	@Nullable
@@ -1109,11 +1248,20 @@ public class CustomSkinManager {
 				"textures/skins/" + sanitizedName + "_" + lastModified + ".png"
 			);
 
+			PlayerSkin baseSkin = new PlayerSkin(
+				texturePath,
+				null,
+				null,
+				null,
+				detectedModel,
+				true
+			);
+
 			Minecraft.getInstance().getTextureManager().register(texturePath, dynamicTexture);
 			Minecraft.getInstance().getTextureManager().register(assetId, dynamicTexture);
 
 			LOGGER.info("Loaded custom skin from {} (Detected Model: {})", skinFile.getFileName(), detectedModel);
-			return new CachedSkin(skinFile, lastModified, assetId, texturePath, dynamicTexture, detectedModel);
+			return new CachedSkin(skinFile, lastModified, assetId, texturePath, dynamicTexture, detectedModel, baseSkin);
 		} catch (Exception e) {
 			LOGGER.error("Failed to read skin image from {}", skinFile, e);
 			return null;

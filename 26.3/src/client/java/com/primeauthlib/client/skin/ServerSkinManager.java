@@ -7,6 +7,7 @@ import com.google.gson.reflect.TypeToken;
 import com.primeauthlib.client.security.SecurityUtils;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
@@ -37,7 +38,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Manages multiplayer server skin synchronization (/skin, /skinrestorer, /sr) for Minecraft 26.3.
+ * Manages multiplayer server skin synchronization (/skin, /skinrestorer, /sr).
  * Features:
  * - MineSkin & direct URL support (e.g. https://mineskin.org/skins/828c0e10e02c4f02921b2b8244f3ae35).
  * - Multi-server command history list with status tracking (SUCCESS, PENDING, ERROR, SKIPPED).
@@ -75,6 +76,11 @@ public class ServerSkinManager {
 	private static String serverSkinUrl = "";
 	private static boolean autoSyncOnJoin = true;
 	private static final List<ServerCommandRecord> history = new CopyOnWriteArrayList<>();
+	private static final java.util.concurrent.ExecutorService ASYNC_IO = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+		Thread t = new Thread(r, "PrimeAuthLib-ServerSkin-IO");
+		t.setDaemon(true);
+		return t;
+	});
 
 	private static String lastSentCommand = null;
 	private static String lastSentSkinUrl = null;
@@ -123,7 +129,7 @@ public class ServerSkinManager {
 			});
 		});
 
-		LOGGER.info("ServerSkinManager initialized for 26.3.");
+		LOGGER.info("ServerSkinManager initialized.");
 	}
 
 	public static String getServerSkinUrl() {
@@ -275,8 +281,11 @@ public class ServerSkinManager {
 		}
 
 		String rawText = message.getString().trim();
-		String text = SecurityUtils.sanitizeForDisplay(rawText, 160);
-		String lower = text.toLowerCase(Locale.ROOT);
+		if (rawText.isEmpty()) {
+			return;
+		}
+
+		String lower = rawText.toLowerCase(Locale.ROOT);
 
 		// Common server skin plugin error signatures
 		boolean isError = lower.contains("error") ||
@@ -284,19 +293,25 @@ public class ServerSkinManager {
 			lower.contains("not found") ||
 			lower.contains("failed") ||
 			lower.contains("cooldown") ||
-			lower.contains("wait") ||
 			lower.contains("unknown command") ||
 			lower.contains("rate limit") ||
 			lower.contains("could not load") ||
-			lower.contains("permission");
+			(lower.contains("permission") && lower.contains("denied"));
 
 		// Common success signatures
 		boolean isSuccess = lower.contains("skin has been set") ||
 			lower.contains("skin changed") ||
 			lower.contains("skin updated") ||
 			lower.contains("skin set") ||
-			lower.contains("success") ||
 			lower.contains("skin will be updated");
+
+		if (!isError && !isSuccess) {
+			return;
+		}
+
+		// Command response matched: acknowledge and stop monitoring subsequent messages
+		lastSentCommandTime = 0;
+		String text = SecurityUtils.sanitizeForDisplay(rawText, 160);
 
 		if (isError) {
 			LOGGER.warn("Server reported error for /skin command: {}", text);
@@ -401,6 +416,10 @@ public class ServerSkinManager {
 	}
 
 	private static void saveHistory() {
+		ASYNC_IO.execute(ServerSkinManager::saveHistorySync);
+	}
+
+	private static void saveHistorySync() {
 		try {
 			Path file = CustomSkinManager.getSkinsDir().resolve("server_skin_history.json");
 			String json = GSON.toJson(history);

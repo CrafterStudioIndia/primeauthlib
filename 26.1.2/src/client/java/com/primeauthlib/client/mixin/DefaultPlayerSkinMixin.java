@@ -15,6 +15,7 @@ import java.util.UUID;
 public class DefaultPlayerSkinMixin {
 	@Inject(method = "get(Ljava/util/UUID;)Lnet/minecraft/world/entity/player/PlayerSkin;", at = @At("RETURN"), cancellable = true)
 	private static void primeauthlib$onGetDefaultSkinByUuid(UUID uuid, CallbackInfoReturnable<PlayerSkin> cir) {
+		if (uuid == null) return;
 		PlayerSkin customSkin = CustomSkinManager.getCustomSkinByUuid(uuid, cir.getReturnValue());
 		if (customSkin != null) {
 			cir.setReturnValue(customSkin);
@@ -23,6 +24,7 @@ public class DefaultPlayerSkinMixin {
 
 	@Inject(method = "get(Lcom/mojang/authlib/GameProfile;)Lnet/minecraft/world/entity/player/PlayerSkin;", at = @At("RETURN"), cancellable = true)
 	private static void primeauthlib$onGetDefaultSkinByProfile(GameProfile profile, CallbackInfoReturnable<PlayerSkin> cir) {
+		if (profile == null) return;
 		PlayerSkin customSkin = CustomSkinManager.getCustomSkin(profile, cir.getReturnValue());
 		if (customSkin != null) {
 			cir.setReturnValue(customSkin);

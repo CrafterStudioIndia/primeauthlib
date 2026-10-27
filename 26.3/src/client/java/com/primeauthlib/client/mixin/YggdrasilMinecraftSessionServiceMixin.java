@@ -43,7 +43,7 @@ public class YggdrasilMinecraftSessionServiceMixin {
 
 	@Inject(method = "fetchProfile", at = @At("RETURN"), cancellable = true)
 	private void primeauthlib$onFetchProfile(UUID profileId, boolean requireSecure, CallbackInfoReturnable<ProfileResult> cir) {
-		if (cir.getReturnValue() == null) {
+		if (cir.getReturnValue() == null && AuthlibInjector.hasServerUrl()) {
 			ProfileResult result = AuthlibInjector.fetchInjectedProfile(profileId);
 			if (result != null) {
 				cir.setReturnValue(result);
@@ -53,7 +53,7 @@ public class YggdrasilMinecraftSessionServiceMixin {
 
 	@Inject(method = "hasJoinedServer", at = @At("RETURN"), cancellable = true)
 	private void primeauthlib$onHasJoinedServer(String profileName, String serverId, InetAddress address, CallbackInfoReturnable<ProfileResult> cir) {
-		if (cir.getReturnValue() == null) {
+		if (cir.getReturnValue() == null && AuthlibInjector.hasServerUrl()) {
 			ProfileResult result = AuthlibInjector.hasJoinedServer(profileName, serverId, address);
 			if (result != null) {
 				cir.setReturnValue(result);
