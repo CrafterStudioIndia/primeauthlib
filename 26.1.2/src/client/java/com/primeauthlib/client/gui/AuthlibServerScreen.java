@@ -9,7 +9,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /**
- * Screen to configure custom remote Authlib-Injector API servers (e.g. LittleSkin, Ely.by, Blessing Skin) for Minecraft 26.3.
+ * Screen to configure custom remote Authlib-Injector API servers (e.g. LittleSkin, Ely.by, Blessing Skin) for Minecraft 26.1.2.
  * Clean native Minecraft style without clunky tab bars.
  */
 public class AuthlibServerScreen extends Screen {

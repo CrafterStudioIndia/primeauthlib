@@ -6,6 +6,7 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.primeauthlib.PrimeAuthLib;
+import com.primeauthlib.client.security.SecurityUtils;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -43,7 +44,7 @@ import java.util.stream.Stream;
 
 /**
  * Manages loading, auto-detecting model (Slim vs Wide), caching, multiple skin switching,
- * drag-and-drop importing, Mojang/URL fetching, and hot-reloading player skins placed in 'auth-libskins' for Minecraft 26.3.
+ * drag-and-drop importing, Mojang/URL fetching, and hot-reloading player skins placed in 'auth-libskins' for Minecraft 26.1.2.
  * Fully supports online accounts, offline (cracked) accounts, and offline servers.
  */
 public class CustomSkinManager {
@@ -91,7 +92,7 @@ public class CustomSkinManager {
 	public static void autoConfigureFolderForVersion() {
 		String mcVersion = FabricLoader.getInstance().getModContainer("minecraft")
 			.map(c -> c.getMetadata().getVersion().getFriendlyString())
-			.orElse("26.3");
+			.orElse("26.1.2");
 
 		Path gameDir = FabricLoader.getInstance().getGameDir();
 		skinsDir = gameDir.resolve(SKINS_DIR_NAME);
@@ -340,55 +341,23 @@ public class CustomSkinManager {
 	public static final Pattern TEXTURE_NET_PATTERN = Pattern.compile("https?://textures\\.minecraft\\.net/texture/([a-zA-Z0-9]+)");
 
 	public static boolean isPng(byte[] bytes) {
-		if (bytes == null || bytes.length < 8) return false;
-		return (bytes[0] == (byte) 0x89) &&
-			   (bytes[1] == (byte) 0x50) && // 'P'
-			   (bytes[2] == (byte) 0x4E) && // 'N'
-			   (bytes[3] == (byte) 0x47) && // 'G'
-			   (bytes[4] == (byte) 0x0D) &&
-			   (bytes[5] == (byte) 0x0A) &&
-			   (bytes[6] == (byte) 0x1A) &&
-			   (bytes[7] == (byte) 0x0A);
+		return SecurityUtils.isValidPng(bytes);
 	}
 
 	public static byte[] fetchRawBytesWithRedirects(String urlStr) throws IOException {
-		String currentUrl = urlStr;
-		for (int i = 0; i < 5; i++) {
-			URL url = URI.create(currentUrl).toURL();
-			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-			conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 PrimeAuthLib/1.0");
-			conn.setRequestProperty("Accept", "image/png,image/*,text/html,application/json;q=0.9,*/*;q=0.8");
-			conn.setConnectTimeout(8000);
-			conn.setReadTimeout(8000);
-			conn.setInstanceFollowRedirects(true);
-
-			int code = conn.getResponseCode();
-			if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP || code == 307 || code == 308) {
-				String location = conn.getHeaderField("Location");
-				if (location != null && !location.isBlank()) {
-					currentUrl = location;
-					continue;
-				}
-			}
-			if (code != 200) {
-				throw new IOException("HTTP " + code + " (" + conn.getResponseMessage() + ")");
-			}
-			try (InputStream is = conn.getInputStream()) {
-				return is.readAllBytes();
-			}
-		}
-		throw new IOException("Too many redirects for URL: " + urlStr);
+		SecurityUtils.HashedPayload payload = SecurityUtils.fetchEncryptedAndHashedPayload(urlStr, SecurityUtils.MAX_SKIN_PAYLOAD_BYTES);
+		return payload.bytes();
 	}
 
 	@Nullable
 	public static String resolveMineSkinTexture(String skinId) {
-		// 1. Try v2 API
+		if (skinId == null || !skinId.matches("^[a-zA-Z0-9_\\-]+$")) {
+			return null;
+		}
+
+		// 1. Try v2 API over encrypted HTTPS connection
 		try {
-			URL apiUrl = URI.create("https://api.mineskin.org/v2/skins/" + skinId).toURL();
-			HttpURLConnection conn = (HttpURLConnection) apiUrl.openConnection();
-			conn.setRequestProperty("User-Agent", "Mozilla/5.0 PrimeAuthLib/1.0");
-			conn.setConnectTimeout(6000);
-			conn.setReadTimeout(6000);
+			HttpURLConnection conn = SecurityUtils.openEncryptedConnection("https://api.mineskin.org/v2/skins/" + skinId, 6000, 6000);
 			if (conn.getResponseCode() == 200) {
 				try (InputStream is = conn.getInputStream(); InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
 					JsonObject obj = GSON.fromJson(reader, JsonObject.class);
@@ -404,11 +373,7 @@ public class CustomSkinManager {
 
 		// 2. Try v1 / get / uuid API
 		try {
-			URL apiUrl = URI.create("https://api.mineskin.org/get/uuid/" + skinId).toURL();
-			HttpURLConnection conn = (HttpURLConnection) apiUrl.openConnection();
-			conn.setRequestProperty("User-Agent", "Mozilla/5.0 PrimeAuthLib/1.0");
-			conn.setConnectTimeout(6000);
-			conn.setReadTimeout(6000);
+			HttpURLConnection conn = SecurityUtils.openEncryptedConnection("https://api.mineskin.org/get/uuid/" + skinId, 6000, 6000);
 			if (conn.getResponseCode() == 200) {
 				try (InputStream is = conn.getInputStream(); InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
 					JsonObject obj = GSON.fromJson(reader, JsonObject.class);
@@ -429,7 +394,7 @@ public class CustomSkinManager {
 		if (inputUrl == null || inputUrl.isBlank()) {
 			throw new IOException("Skin URL cannot be empty");
 		}
-		String cleanUrl = inputUrl.trim();
+		String cleanUrl = SecurityUtils.validateAndSanitizeUrl(inputUrl);
 		String targetUrl = cleanUrl;
 
 		// If input is a MineSkin URL, attempt to resolve via API
@@ -438,16 +403,19 @@ public class CustomSkinManager {
 			String skinId = msMatcher.group(1);
 			String apiResolved = resolveMineSkinTexture(skinId);
 			if (apiResolved != null && !apiResolved.isBlank()) {
-				targetUrl = apiResolved;
+				targetUrl = SecurityUtils.validateAndSanitizeUrl(apiResolved);
 			}
 		}
 
-		// Download bytes
-		byte[] bytes = fetchRawBytesWithRedirects(targetUrl);
+		// Download bytes over encrypted HTTPS with SHA-256 integrity check and size cap
+		SecurityUtils.HashedPayload payload = SecurityUtils.fetchEncryptedAndHashedPayload(targetUrl, SecurityUtils.MAX_SKIN_PAYLOAD_BYTES);
+		byte[] bytes = payload.bytes();
 
-		// If it's already a valid PNG, return it
+		// If it's already a valid PNG, validate dimensions and return
 		if (isPng(bytes)) {
+			SecurityUtils.validatePngDimensions(bytes, 1024);
 			validateSkinImageDimensions(bytes);
+			LOGGER.info("Verified skin texture integrity (SHA-256: {})", payload.sha256Hex());
 			return bytes;
 		}
 
@@ -455,10 +423,13 @@ public class CustomSkinManager {
 		String bodyText = new String(bytes, StandardCharsets.UTF_8);
 		Matcher texMatcher = TEXTURE_NET_PATTERN.matcher(bodyText);
 		if (texMatcher.find()) {
-			String resolvedTex = texMatcher.group(0);
-			byte[] texBytes = fetchRawBytesWithRedirects(resolvedTex);
+			String resolvedTex = SecurityUtils.validateAndSanitizeUrl(texMatcher.group(0));
+			SecurityUtils.HashedPayload texPayload = SecurityUtils.fetchEncryptedAndHashedPayload(resolvedTex, SecurityUtils.MAX_SKIN_PAYLOAD_BYTES);
+			byte[] texBytes = texPayload.bytes();
 			if (isPng(texBytes)) {
+				SecurityUtils.validatePngDimensions(texBytes, 1024);
 				validateSkinImageDimensions(texBytes);
+				LOGGER.info("Verified skin texture integrity (SHA-256: {})", texPayload.sha256Hex());
 				return texBytes;
 			}
 		}
@@ -467,9 +438,13 @@ public class CustomSkinManager {
 		Matcher jsonMatcher = Pattern.compile("\"url\"\\s*:\\s*\"(https?:\\\\?/\\\\?/[^\"]+)\"").matcher(bodyText);
 		if (jsonMatcher.find()) {
 			String unescaped = jsonMatcher.group(1).replace("\\/", "/");
-			byte[] unescapedBytes = fetchRawBytesWithRedirects(unescaped);
+			String sanitizedUnescaped = SecurityUtils.validateAndSanitizeUrl(unescaped);
+			SecurityUtils.HashedPayload unescapedPayload = SecurityUtils.fetchEncryptedAndHashedPayload(sanitizedUnescaped, SecurityUtils.MAX_SKIN_PAYLOAD_BYTES);
+			byte[] unescapedBytes = unescapedPayload.bytes();
 			if (isPng(unescapedBytes)) {
+				SecurityUtils.validatePngDimensions(unescapedBytes, 1024);
 				validateSkinImageDimensions(unescapedBytes);
+				LOGGER.info("Verified skin texture integrity (SHA-256: {})", unescapedPayload.sha256Hex());
 				return unescapedBytes;
 			}
 		}
@@ -493,33 +468,27 @@ public class CustomSkinManager {
 				if (username == null || username.trim().isEmpty()) {
 					return "Username cannot be empty";
 				}
-				String cleanName = username.trim();
+				String safeUsername = SecurityUtils.sanitizeFileName(username.trim());
 
-				// 1. Get UUID from Mojang API
-				URL profileUrl = URI.create("https://api.mojang.com/users/profiles/minecraft/" + cleanName).toURL();
-				HttpURLConnection conn = (HttpURLConnection) profileUrl.openConnection();
-				conn.setRequestMethod("GET");
-				conn.setRequestProperty("User-Agent", "PrimeAuthLib/1.0");
-				conn.setConnectTimeout(6000);
-				conn.setReadTimeout(6000);
+				// 1. Get UUID from Mojang API over encrypted HTTPS connection
+				HttpURLConnection conn = SecurityUtils.openEncryptedConnection("https://api.mojang.com/users/profiles/minecraft/" + safeUsername, 6000, 6000);
 				if (conn.getResponseCode() != 200) {
-					return "Mojang player '" + cleanName + "' not found (HTTP " + conn.getResponseCode() + ")";
+					return "Mojang player '" + safeUsername + "' not found (HTTP " + conn.getResponseCode() + ")";
 				}
 				JsonObject profileObj;
 				try (InputStream is = conn.getInputStream(); InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
 					profileObj = GSON.fromJson(reader, JsonObject.class);
 				}
 				if (profileObj == null || !profileObj.has("id")) {
-					return "Failed to parse player profile for " + cleanName;
+					return "Failed to parse player profile for " + safeUsername;
 				}
 				String uuidStr = profileObj.get("id").getAsString();
+				if (!uuidStr.matches("^[a-zA-Z0-9]+$")) {
+					return "Invalid UUID format received from Mojang";
+				}
 
-				// 2. Get Session Profile with skin URL
-				URL sessionUrl = URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + uuidStr).toURL();
-				HttpURLConnection sessionConn = (HttpURLConnection) sessionUrl.openConnection();
-				sessionConn.setRequestProperty("User-Agent", "PrimeAuthLib/1.0");
-				sessionConn.setConnectTimeout(6000);
-				sessionConn.setReadTimeout(6000);
+				// 2. Get Session Profile with skin URL over encrypted HTTPS connection
+				HttpURLConnection sessionConn = SecurityUtils.openEncryptedConnection("https://sessionserver.mojang.com/session/minecraft/profile/" + uuidStr, 6000, 6000);
 				if (sessionConn.getResponseCode() != 200) {
 					return "Failed to fetch session profile from Mojang (HTTP " + sessionConn.getResponseCode() + ")";
 				}
@@ -528,7 +497,7 @@ public class CustomSkinManager {
 					sessionObj = GSON.fromJson(reader, JsonObject.class);
 				}
 				if (sessionObj == null || !sessionObj.has("properties")) {
-					return "Player " + cleanName + " has no textures";
+					return "Player " + safeUsername + " has no textures";
 				}
 				String textureBase64 = null;
 				for (var elem : sessionObj.getAsJsonArray("properties")) {
@@ -539,28 +508,28 @@ public class CustomSkinManager {
 					}
 				}
 				if (textureBase64 == null) {
-					return "Player " + cleanName + " has no skin property";
+					return "Player " + safeUsername + " has no skin property";
 				}
 				String decodedJson = new String(Base64.getDecoder().decode(textureBase64), StandardCharsets.UTF_8);
 				JsonObject textureObj = GSON.fromJson(decodedJson, JsonObject.class);
 				if (!textureObj.has("textures") || !textureObj.getAsJsonObject("textures").has("SKIN")) {
-					return "Player " + cleanName + " has no skin texture defined";
+					return "Player " + safeUsername + " has no skin texture defined";
 				}
-				String skinUrl = textureObj.getAsJsonObject("textures").getAsJsonObject("SKIN").get("url").getAsString();
+				String skinUrl = SecurityUtils.validateAndSanitizeUrl(textureObj.getAsJsonObject("textures").getAsJsonObject("SKIN").get("url").getAsString());
 
-				// 3. Download the skin PNG
+				// 3. Download the skin PNG with SHA-256 integrity verification
 				byte[] skinBytes = downloadSkinBytes(skinUrl);
 				if (skinBytes == null || skinBytes.length == 0) {
 					return "Failed to download skin image from " + skinUrl;
 				}
-				Path targetFile = getSkinsDir().resolve(cleanName + ".png");
+				Path targetFile = getSkinsDir().resolve(safeUsername + ".png");
 				Files.write(targetFile, skinBytes);
 				selectSkin(targetFile);
 
 				// Auto-trigger server plugin command if server supports it
-				triggerServerSkinCommand(cleanName, skinUrl);
+				triggerServerSkinCommand(safeUsername, skinUrl);
 
-				return "SUCCESS:" + cleanName + ".png";
+				return "SUCCESS:" + safeUsername + ".png";
 			} catch (Exception e) {
 				LOGGER.error("Error fetching skin for username: {}", username, e);
 				return "Error: " + e.getMessage();
@@ -574,11 +543,11 @@ public class CustomSkinManager {
 				if (urlStr == null || urlStr.trim().isEmpty()) {
 					return "URL cannot be empty";
 				}
-				String cleanUrl = urlStr.trim();
+				String cleanUrl = SecurityUtils.validateAndSanitizeUrl(urlStr);
 				byte[] bytes = downloadSkinBytes(cleanUrl);
 
 				String name = customName != null && !customName.trim().isEmpty()
-					? customName.trim()
+					? SecurityUtils.sanitizeFileName(customName.trim())
 					: null;
 				if (name == null) {
 					Matcher msMatcher = MINESKIN_PATTERN.matcher(cleanUrl);
@@ -595,6 +564,7 @@ public class CustomSkinManager {
 						} else {
 							name = "skin_url_" + (System.currentTimeMillis() % 100000);
 						}
+						name = SecurityUtils.sanitizeFileName(name);
 					}
 				}
 				if (!name.toLowerCase(Locale.ROOT).endsWith(".png")) {

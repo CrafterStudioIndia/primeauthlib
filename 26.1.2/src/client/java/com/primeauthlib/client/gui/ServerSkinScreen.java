@@ -11,7 +11,7 @@ import net.minecraft.network.chat.Component;
 import java.util.List;
 
 /**
- * Modern, clean Screen for Multiplayer Server Skin synchronization (/skin set <url>) for Minecraft 26.3.
+ * Modern, clean Screen for Multiplayer Server Skin synchronization (/skin set <url>) for Minecraft 26.1.2.
  * Features:
  * - Empty by default; stored individually in config.properties.
  * - Dedicated [Clear] button to clear and persist config immediately.

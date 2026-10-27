@@ -11,6 +11,7 @@ import com.mojang.authlib.minecraft.MinecraftProfileTextures;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import com.mojang.authlib.yggdrasil.ProfileResult;
+import com.primeauthlib.client.security.SecurityUtils;
 import com.primeauthlib.client.skin.CustomSkinManager;
 import net.minecraft.world.entity.player.PlayerModelType;
 import org.jetbrains.annotations.Nullable;
@@ -188,12 +189,10 @@ public class AuthlibInjector {
 		}
 
 		try {
-			String endpoint = authlibServerUrl.replaceAll("/+$", "") + "/sessionserver/session/minecraft/profile/" + uuid.toString().replace("-", "") + "?unsigned=false";
-			URL url = URI.create(endpoint).toURL();
-			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			String baseUrl = SecurityUtils.validateAndSanitizeUrl(authlibServerUrl);
+			String endpoint = baseUrl.replaceAll("/+$", "") + "/sessionserver/session/minecraft/profile/" + uuid.toString().replace("-", "") + "?unsigned=false";
+			HttpURLConnection conn = SecurityUtils.openEncryptedConnection(endpoint, 5000, 5000);
 			conn.setRequestMethod("GET");
-			conn.setConnectTimeout(5000);
-			conn.setReadTimeout(5000);
 
 			if (conn.getResponseCode() == 200) {
 				try (InputStream is = conn.getInputStream(); InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
@@ -216,7 +215,7 @@ public class AuthlibInjector {
 						PropertyMap propMap = new PropertyMap(multimap);
 
 						GameProfile gp = new GameProfile(profileId, name, propMap);
-						LOGGER.info("Successfully fetched profile {} from Authlib-Injector server", name);
+						LOGGER.info("Successfully fetched profile {} from Authlib-Injector server (TLS)", name);
 						return new ProfileResult(gp);
 					}
 				}
@@ -235,16 +234,16 @@ public class AuthlibInjector {
 		}
 
 		try {
-			String endpoint = authlibServerUrl.replaceAll("/+$", "") + "/sessionserver/session/minecraft/hasJoined?username=" + profileName + "&serverId=" + serverId;
+			String baseUrl = SecurityUtils.validateAndSanitizeUrl(authlibServerUrl);
+			String safeProfileName = java.net.URLEncoder.encode(profileName, StandardCharsets.UTF_8);
+			String safeServerId = java.net.URLEncoder.encode(serverId, StandardCharsets.UTF_8);
+			String endpoint = baseUrl.replaceAll("/+$", "") + "/sessionserver/session/minecraft/hasJoined?username=" + safeProfileName + "&serverId=" + safeServerId;
 			if (address != null) {
-				endpoint += "&ip=" + address.getHostAddress();
+				endpoint += "&ip=" + java.net.URLEncoder.encode(address.getHostAddress(), StandardCharsets.UTF_8);
 			}
 
-			URL url = URI.create(endpoint).toURL();
-			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			HttpURLConnection conn = SecurityUtils.openEncryptedConnection(endpoint, 5000, 5000);
 			conn.setRequestMethod("GET");
-			conn.setConnectTimeout(5000);
-			conn.setReadTimeout(5000);
 
 			if (conn.getResponseCode() == 200) {
 				try (InputStream is = conn.getInputStream(); InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {

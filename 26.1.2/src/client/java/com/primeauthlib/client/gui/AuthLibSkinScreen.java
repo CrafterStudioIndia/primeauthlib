@@ -15,7 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Modern, clean Settings GUI for PrimeAuthLib / auth-libskins for Minecraft 26.3.
+ * Modern, clean Settings GUI for PrimeAuthLib / auth-libskins for Minecraft 26.1.2.
  * Features:
  * - Native Minecraft styled 2-column balanced layout.
  * - Interactive 3D skin model preview with left/right carousel arrows.

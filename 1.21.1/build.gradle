@@ -1,0 +1,66 @@
+plugins {
+	id 'fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+base.archivesName = project.archives_base_name
+
+repositories {
+	maven {
+		name = "Fabric"
+		url = "https://maven.fabricmc.net/"
+	}
+	mavenCentral()
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"primeauthlib" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings loom.officialMojangMappings()
+
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	compileOnly files("libs/modmenu-api-stub.jar")
+}
+
+processResources {
+	def projectVersion = project.version.toString()
+	inputs.property "version", projectVersion
+
+	filesMatching("fabric.mod.json") {
+		expand "version": projectVersion
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+}
+
+java {
+	withSourcesJar()
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+jar {
+	def baseArchivesName = project.base.archivesName.get()
+	inputs.property "archivesBaseName", baseArchivesName
+	from("LICENSE") {
+		rename { "${it}_${baseArchivesName}" }
+	}
+}
+

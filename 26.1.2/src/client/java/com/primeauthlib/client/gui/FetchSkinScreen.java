@@ -9,7 +9,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.Util;
 
 /**
- * Dedicated Screen to fetch skins from Mojang usernames and direct URLs / MineSkin for Minecraft 26.3.
+ * Dedicated Screen to fetch skins from Mojang usernames and direct URLs / MineSkin for Minecraft 26.1.2.
  * Features:
  * - Dual-input interface: Fetch by username OR fetch by image/MineSkin URL.
  * - Downloads directly into auth-libskins/ and automatically equips the skin.

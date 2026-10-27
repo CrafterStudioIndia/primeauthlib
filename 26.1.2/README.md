@@ -1,11 +1,11 @@
 # PrimeAuthLib (Minecraft 26.1.2)
 
-[![Minecraft 26.3](https://img.shields.io/badge/Minecraft-26.3-brightgreen.svg)](https://minecraft.net/)
-[![Fabric Loader](https://img.shields.io/badge/Fabric-0.19.5+-blue.svg)](https://fabricmc.net/)
-[![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
+[![Minecraft 26.1.2](https://img.shields.io/badge/Minecraft-26.1.2-brightgreen.svg)](https://minecraft.net/)
+[![Fabric Loader](https://img.shields.io/badge/Fabric-0.20.1+-blue.svg)](https://fabricmc.net/)
+[![Java 25](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/)
 [![License MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**PrimeAuthLib** for **Minecraft 26.3** ("Wilderness Bound") is a client-side Fabric mod that loads custom player skins directly from an `auth-libskins` folder in your instance directory—**no restarting required!**
+**PrimeAuthLib** for **Minecraft 26.1.2** is a client-side Fabric mod that loads custom player skins directly from an `auth-libskins` folder in your instance directory—**no restarting required!**
 
 Features **Slim (Alex) vs Wide (Steve) auto-detection**, an interactive **3D player model preview GUI**, and a **built-in in-game Authlib Injector** that hooks directly into Mojang's session services—completely bypassing third-party skin API limitations, offline-mode restrictions, and server-side skin limits without requiring any external `-javaagent`.
 
@@ -71,11 +71,11 @@ Place your `.png` skin files into the `auth-libskins/` directory in your `.minec
 ## 🛠️ Building from Source
 
 ```bash
-cd 26.3
+cd 26.1.2
 ./gradlew build
 ```
 
-The compiled mod JAR will be located in `build/libs/primeauthlib-26.3-1.0.0.jar`.
+The compiled mod JAR will be located in `build/libs/primeauthlib-26.1.2-1.0.0.jar`.
 
 ---
 

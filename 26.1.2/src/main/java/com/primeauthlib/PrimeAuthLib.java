@@ -11,7 +11,7 @@ public class PrimeAuthLib implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		LOGGER.info("Initializing PrimeAuthLib for Fabric 1.21.11");
+		LOGGER.info("Initializing PrimeAuthLib for Fabric 26.1.2");
 	}
 
 	public static Identifier id(String path) {

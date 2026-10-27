@@ -7,6 +7,10 @@ out/
 bin/
 classes/
 .gradle-cache/
+.loom-cache/
+*/build/
+*/.gradle/
+*/.loom-cache/
 
 # Ignore all JAR/WAR/ZIP by default except Gradle wrapper & libs/
 *.jar
@@ -16,6 +20,8 @@ classes/
 *.7z
 !gradle/wrapper/gradle-wrapper.jar
 !libs/*.jar
+!*/gradle/wrapper/gradle-wrapper.jar
+!*/libs/*.jar
 
 # ==========================================
 # Minecraft & Fabric Runtime Directory
@@ -26,6 +32,10 @@ runServer/
 logs/
 crash-reports/
 *.log
+*/run/
+*/logs/
+auth-libskins/
+*/auth-libskins/
 
 # ==========================================
 # IDE & Editor Configurations

@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
+import com.primeauthlib.client.security.SecurityUtils;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -197,6 +198,15 @@ public class ServerSkinManager {
 		}
 
 		String serverAddress = client.getCurrentServer().ip;
+
+		// OpSec check: validate targetUrl against command injection
+		if (!SecurityUtils.isSafeCommandArgument(targetUrl)) {
+			String err = "OpSec Rejection: Command argument contains disallowed characters or injection sequences";
+			LOGGER.error("Prevented potential command injection: {}", targetUrl);
+			recordHistory(serverAddress, "skin [BLOCKED]", targetUrl, "ERROR", err);
+			return new CommandResult(false, err, true);
+		}
+
 		var connection = client.getConnection();
 		var dispatcher = connection.getCommands();
 		if (dispatcher == null) {
@@ -265,7 +275,8 @@ public class ServerSkinManager {
 			return; // Only monitor for 8 seconds after command sent
 		}
 
-		String text = message.getString().trim();
+		String rawText = message.getString().trim();
+		String text = SecurityUtils.sanitizeForDisplay(rawText, 160);
 		String lower = text.toLowerCase(Locale.ROOT);
 
 		// Common server skin plugin error signatures
@@ -329,7 +340,7 @@ public class ServerSkinManager {
 				if (inputUrl == null || inputUrl.isBlank()) {
 					return "URL cannot be empty";
 				}
-				String cleanUrl = inputUrl.trim();
+				String cleanUrl = SecurityUtils.validateAndSanitizeUrl(inputUrl);
 				byte[] bytes = CustomSkinManager.downloadSkinBytes(cleanUrl);
 
 				String skinFileName;
@@ -339,6 +350,7 @@ public class ServerSkinManager {
 				} else {
 					skinFileName = "server_skin_" + (System.currentTimeMillis() % 100000) + ".png";
 				}
+				skinFileName = SecurityUtils.sanitizeFileName(skinFileName);
 
 				Path targetFile = CustomSkinManager.getSkinsDir().resolve(skinFileName);
 				Files.write(targetFile, bytes);

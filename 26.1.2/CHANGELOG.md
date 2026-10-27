@@ -1,13 +1,13 @@
-# Changelog (PrimeAuthLib - Minecraft 26.3)
+# Changelog (PrimeAuthLib - Minecraft 26.1.2)
 
-All notable changes to **PrimeAuthLib** for Minecraft 26.3 will be documented in this file.
+All notable changes to **PrimeAuthLib** for Minecraft 26.1.2 will be documented in this file.
 
-## [1.0.0+26.3] - 2026-10-25
+## [1.0.0+26.1.2] - 2026-10-25
 
-### Port to Minecraft 26.3 (Wilderness Bound)
+### Port to Minecraft 26.1.2
 
 #### 🌟 Features
-- **Minecraft 26.3 Target**: Compatible with Fabric Loader >=0.19.5, Fabric API 0.165.0+26.3, and Java 21+.
+- **Minecraft 26.1.2 Target**: Compatible with Fabric Loader >=0.20.1, Fabric API 0.155.3+26.1.2, and Java 25+.
 - **Dedicated `auth-libskins/` Directory**: Instance-level zero-config skin loading.
 - **Slim vs Wide Auto-Detection**: Supports standard 64x64, 64x32 conversion, and HD square skins.
 - **Interactive 3D Skin Preview Screen**: Rotatable player model widget and folder opener.
