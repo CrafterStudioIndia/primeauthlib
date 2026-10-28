@@ -7,7 +7,6 @@ import com.google.gson.reflect.TypeToken;
 import com.primeauthlib.client.security.SecurityUtils;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;

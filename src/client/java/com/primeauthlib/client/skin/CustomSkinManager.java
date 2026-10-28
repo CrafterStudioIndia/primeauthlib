@@ -104,12 +104,35 @@ public class CustomSkinManager {
 		ServerSkinManager.init();
 	}
 
-	public static void autoConfigureFolderForVersion() {
-		String mcVersion = FabricLoader.getInstance().getModContainer("minecraft")
-			.map(c -> c.getMetadata().getVersion().getFriendlyString())
-			.orElse("unknown");
+	public static Path getGameDirectorySafe() {
+		try {
+			return FabricLoader.getInstance().getGameDir();
+		} catch (Throwable t) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.gameDirectory != null) {
+				return mc.gameDirectory.toPath();
+			}
+			return Path.of(".");
+		}
+	}
 
-		Path gameDir = FabricLoader.getInstance().getGameDir();
+	public static String getMinecraftVersionSafe(String fallback) {
+		try {
+			return FabricLoader.getInstance().getModContainer("minecraft")
+				.map(c -> c.getMetadata().getVersion().getFriendlyString())
+				.orElse(fallback);
+		} catch (Throwable t) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.getLaunchedVersion() != null) {
+				return mc.getLaunchedVersion();
+			}
+			return fallback;
+		}
+	}
+
+	public static void autoConfigureFolderForVersion() {
+		String mcVersion = getMinecraftVersionSafe("unknown");
+		Path gameDir = getGameDirectorySafe();
 		skinsDir = gameDir.resolve(SKINS_DIR_NAME);
 
 		try {
@@ -758,9 +781,7 @@ public class CustomSkinManager {
 		Path configFile = getSkinsDir().resolve("config.properties");
 		try (FileOutputStream os = new FileOutputStream(configFile.toFile())) {
 			Properties props = new Properties();
-			String mcVersion = FabricLoader.getInstance().getModContainer("minecraft")
-				.map(c -> c.getMetadata().getVersion().getFriendlyString())
-				.orElse("unknown");
+			String mcVersion = getMinecraftVersionSafe("unknown");
 			props.setProperty("configured_for_version", mcVersion);
 			props.setProperty("model_mode", currentModelMode.name());
 			if (selectedSkinFileName != null && !selectedSkinFileName.isEmpty()) {

@@ -101,3 +101,9 @@ $RECYCLE.BIN/
 .env.local
 *.local
 local.properties
+
+# ==========================================
+# Local Release Script & Output Folder
+# ==========================================
+mods.sh
+latest release/
